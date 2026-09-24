@@ -158,7 +158,7 @@ const VALVE_OPEN=['00','20','01','03','04','05','06','11','14'], VALVE_CLOSE=['0
 const AF_OPEN=['00','20','10','14'], AF_CLOSE=['08','11','13'];
 const STEPS=['Material','(1) PPE','(2) RM & ISO','(3) 설비 점검','(4) 투입 전 확인','(5) Valve · 투입','(6) Air Flushing','완료'];
 const DEF_CFG={workers:[],customers:['HWQ CTSV'],passMin:18200,passMax:19000,maxKg:19000,weighDangerLb:40000,weighPassLb:500,
-  ms:{clientId:'',tenantId:'',shareUrl:DEFAULT_SHARE,driveId:'',itemId:'',folderName:''}};
+  ms:{clientId:'4483db59-77c7-4277-a795-540aaf732c5b',tenantId:'9e2f9e87-0f8e-4b71-87d4-c0b36430e0a6',shareUrl:DEFAULT_SHARE,driveId:'',itemId:'',folderName:''}};
 
 const state={batches:[],products:[],lots:[],usage:[],isos:[],cfg:JSON.parse(JSON.stringify(DEF_CFG)),loaded:false,view:'list',step:0,listF:'active'};
 let cur=null, fb=null, AUM=null, auth=null, currentUser=null, unsubs=[], saveT=null;
@@ -745,7 +745,7 @@ function startListeners(fsM,db){
       if(k==='batches'&&cur){ const s=state[k].find(x=>x.id===cur.id); if(s&&s.status==='완료'&&cur.status!=='완료'){ cur=ensure(s); } }
       done(k); if(state.loaded&&!(document.activeElement&&document.activeElement.dataset&&document.activeElement.dataset.k)) render(); },onErr(k)));
   });
-  unsubs.push(fsM.onSnapshot(fsM.doc(db,COL.cfg,'main'),s=>{ if(s.exists()){ const d=s.data(); state.cfg={...JSON.parse(JSON.stringify(DEF_CFG)),...d,ms:{...DEF_CFG.ms,...(d.ms||{})}}; } if(state.cfg.ms.clientId) msalInit(); if(state.view==='settings'||state.loaded) render(); },err=>console.warn('cfg',err)));
+  unsubs.push(fsM.onSnapshot(fsM.doc(db,COL.cfg,'main'),s=>{ if(s.exists()){ const d=s.data(); state.cfg={...JSON.parse(JSON.stringify(DEF_CFG)),...d,ms:{...DEF_CFG.ms,...(d.ms||{})}}; ['clientId','tenantId','shareUrl'].forEach(k=>{ if(!state.cfg.ms[k]) state.cfg.ms[k]=DEF_CFG.ms[k]; }); } if(state.cfg.ms.clientId) msalInit(); if(state.view==='settings'||state.loaded) render(); },err=>console.warn('cfg',err)));
 }
 async function googleLogin(){ try{ const p=new AUM.GoogleAuthProvider(); p.setCustomParameters({prompt:'select_account'}); await AUM.signInWithPopup(auth,p); }catch(e){ if(!/popup-closed|cancelled/.test(e.code||'')) $('loginMsg').textContent='로그인 실패: '+(e.code||e.message); } }
 
