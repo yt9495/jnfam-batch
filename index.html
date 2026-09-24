@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>JNFAM Batch Sheet</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+<style>
+:root{--bg:#f4f6f9;--card:#fff;--line:#dfe3ea;--tx:#1f2937;--mut:#6b7280;--pri:#1d4ed8;--pri2:#e8efff;--ok:#15803d;--okbg:#e7f6ec;--bad:#b91c1c;--badbg:#fdecec;--warn:#b45309;--warnbg:#fff4e0}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--tx);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;font-size:16px}
+button,input,select,textarea{font:inherit;color:inherit}
+.top{position:sticky;top:0;z-index:20;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;padding:10px 16px}
+.top h1{font-size:18px;margin:0;white-space:nowrap}
+.top .bid{font-family:ui-monospace,Menlo,monospace;font-weight:700;color:var(--pri)}
+.top .sp{flex:1}
+.conn{font-size:12px;color:var(--mut);display:flex;align-items:center;gap:6px}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.btn{border:1px solid var(--line);background:#fff;border-radius:10px;padding:10px 16px;min-height:44px;cursor:pointer;font-weight:600}
+.btn.pri{background:var(--pri);border-color:var(--pri);color:#fff}
+.btn.ok{background:var(--ok);border-color:var(--ok);color:#fff}
+.btn.danger{color:var(--bad);border-color:#f3c4c4}
+.btn.sm{min-height:34px;padding:6px 12px;font-size:14px;border-radius:8px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.wrap{max-width:1180px;margin:0 auto;padding:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:14px}
+.card h2{font-size:17px;margin:0 0 12px;display:flex;align-items:center;gap:10px}
+.card h3{font-size:15px;margin:16px 0 8px;color:#374151}
+.help{font-size:13px;color:var(--mut)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.fld label{display:block;font-size:13px;color:var(--mut);margin-bottom:4px;font-weight:600}
+.fld input,.fld select,.fld textarea,td input,td select{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-height:44px;background:#fff}
+.fld textarea{min-height:64px}
+input:disabled,select:disabled,textarea:disabled{background:#f3f4f6}
+.ro{padding:10px 12px;min-height:44px;border-radius:10px;background:#f3f4f6;font-weight:600;display:flex;align-items:center}
+.steps{display:flex;gap:6px;overflow-x:auto;padding:10px 16px;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:61px;z-index:15}
+.step{flex:0 0 auto;border:1px solid var(--line);border-radius:999px;padding:8px 14px;font-size:14px;font-weight:600;background:#fff;cursor:pointer;display:flex;gap:6px;align-items:center;min-height:40px}
+.step.on{background:var(--pri);color:#fff;border-color:var(--pri)}
+.step .cnt{font-size:11px;padding:1px 7px;border-radius:999px;background:#eef1f5;color:var(--mut)}
+.step.on .cnt{background:rgba(255,255,255,.25);color:#fff}
+.step .cnt.full{background:var(--okbg);color:var(--ok)}
+.tog{display:inline-flex;align-items:center;justify-content:center;min-width:64px;min-height:44px;border-radius:10px;border:2px solid var(--line);background:#fff;font-weight:700;cursor:pointer;padding:0 12px;color:var(--mut);gap:6px}
+.tog.on{border-color:var(--ok);background:var(--okbg);color:var(--ok)}
+.tog.no.on{border-color:var(--bad);background:var(--badbg);color:var(--bad)}
+.sig{display:inline-flex;flex-direction:column;align-items:flex-start;justify-content:center;min-width:130px;min-height:44px;border-radius:10px;border:2px dashed #b9c2d0;background:#fafbfc;cursor:pointer;padding:4px 12px;font-size:14px;color:var(--mut);font-weight:600}
+.sig.on{border-style:solid;border-color:var(--pri);background:var(--pri2);color:var(--pri)}
+.sig small{font-weight:400;font-size:11px;color:var(--mut)}
+table.t{width:100%;border-collapse:collapse}
+table.t th{font-size:13px;color:var(--mut);text-align:left;padding:8px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.t td{padding:6px 8px;border-bottom:1px solid #eef0f4;vertical-align:middle}
+table.t td.num,table.t th.num{text-align:right;font-variant-numeric:tabular-nums}
+.pill{display:inline-block;padding:4px 10px;border-radius:999px;font-size:13px;font-weight:700}
+.pill.ok{background:var(--okbg);color:var(--ok)}.pill.bad{background:var(--badbg);color:var(--bad)}.pill.warn{background:var(--warnbg);color:var(--warn)}.pill.gray{background:#eef1f5;color:var(--mut)}.pill.blue{background:var(--pri2);color:var(--pri)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.chk-row{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid #eef0f4}
+.chk-row .lb{font-weight:600}
+.chk-row .lb small{display:block;font-weight:400;color:var(--mut);font-size:13px}
+.time-row{display:flex;gap:8px;align-items:end;flex-wrap:wrap;padding:10px 12px;background:#f8fafc;border-radius:10px;border:1px solid var(--line);margin-bottom:12px}
+.time-row .fld{flex:1;min-width:220px}
+.banner{padding:12px 14px;border-radius:10px;font-size:14px;margin-bottom:12px}
+.banner.warn{background:var(--warnbg);color:var(--warn)}.banner.bad{background:var(--badbg);color:var(--bad)}.banner.ok{background:var(--okbg);color:var(--ok)}.banner.blue{background:var(--pri2);color:var(--pri)}
+.prodsel{display:flex;gap:8px;flex-wrap:wrap}
+.prodsel .tog{min-width:120px}
+.navbar{display:flex;justify-content:space-between;gap:10px;margin:18px 0 40px}
+.list-card{display:grid;grid-template-columns:auto 1fr auto;gap:14px;align-items:center;cursor:pointer}
+.list-card .bn{font-family:ui-monospace,Menlo,monospace;font-weight:800;font-size:18px}
+.worker{border:1px solid var(--line);border-radius:12px;padding:12px}
+.worker .items{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}
+.worker .items .tog{min-width:0;width:100%;justify-content:flex-start;font-size:14px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:14px}
+.kv b{color:var(--mut);font-weight:600}
+#modalBg{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;z-index:50;padding:16px}
+#modalBg.open{display:flex}
+.modal{background:#fff;border-radius:16px;padding:20px;width:560px;max-width:100%;max-height:90vh;overflow:auto}
+.modal h3{margin:0 0 12px}
+.names{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin:10px 0}
+.names button{min-height:52px}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#111827;color:#fff;padding:12px 18px;border-radius:12px;display:none;z-index:60;max-width:90vw}
+#loginGate{position:fixed;inset:0;background:var(--bg);display:none;align-items:center;justify-content:center;z-index:40;flex-direction:column;gap:14px;text-align:center;padding:20px}
+#loginMsg{white-space:pre-line;color:var(--bad);font-size:14px}
+#busy{position:fixed;inset:0;background:rgba(255,255,255,.85);display:none;align-items:center;justify-content:center;z-index:70;flex-direction:column;gap:12px;font-weight:700}
+.spin{width:40px;height:40px;border:4px solid #dbe3f1;border-top-color:var(--pri);border-radius:50%;animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (max-width:700px){.top h1{font-size:15px}.chk-row{grid-template-columns:1fr}.steps{top:57px}}
+
+/* ---------- PDF 출력용 (화면 밖) ---------- */
+#printArea{position:fixed;left:-10000px;top:0}
+.pg{width:794px;min-height:1123px;background:#fff;color:#000;padding:36px 40px;font-family:"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",Arial,sans-serif;font-size:11px;line-height:1.35}
+.pg h1{font-size:20px;text-align:center;margin:0;padding:8px;border:1.5px solid #000;letter-spacing:2px}
+.pg h2{font-size:13px;margin:14px 0 6px;padding:4px 6px;background:#e5e7eb;border:1px solid #000}
+.pg table{width:100%;border-collapse:collapse;margin-bottom:6px}
+.pg td,.pg th{border:1px solid #000;padding:4px 5px;vertical-align:middle}
+.pg th{background:#f1f3f5;font-weight:700;text-align:center}
+.pg .c{text-align:center}.pg .r{text-align:right}
+.pg .v{font-weight:700;color:#0b3d91;text-align:center}
+.pg .pass{color:#0a7a2f;font-weight:800;text-align:center}.pg .fail{color:#b00;font-weight:800;text-align:center}
+.pg .hdr{display:grid;grid-template-columns:1fr 150px;gap:10px;align-items:stretch;margin-bottom:10px}
+.pg .appr td{height:34px;text-align:center}
+.pg .foot{margin-top:10px;font-size:9px;color:#555;display:flex;justify-content:space-between}
+.pg .sg{font-size:10px;color:#0b3d91;text-align:center}
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>JNFAM Batch Sheet</h1>
+  <span class="bid" id="topBid"></span>
+  <span class="sp"></span>
+  <span class="conn" id="conn"><span class="dot" style="background:#94a3b8"></span>연결 중…</span>
+  <button class="btn sm" onclick="app.go('list')">목록</button>
+  <button class="btn sm" onclick="app.go('settings')">설정</button>
+</div>
+<div id="demoBar" style="display:none;background:#fff4e0;color:#b45309;padding:10px 16px;font-size:14px;font-weight:600;border-bottom:1px solid #f3d9a8">⚠ DEMO 모드 — 실제 재고 현황 시스템(Firebase)에 연결되지 않았습니다. 파일을 PC에서 직접 열면 항상 DEMO로 동작하며, 표시되는 재고는 샘플입니다. 실제 재고는 GitHub Pages 주소(https://yt9495.github.io/jnfam-batch/)로 접속해야 반영됩니다.</div>
+<div id="stepsBar" class="steps" style="display:none"></div>
+<div class="wrap" id="main"></div>
+<div id="printArea"></div>
+<div id="modalBg"><div class="modal" id="modalBox"></div></div>
+<div id="toast"></div>
+<div id="busy"><div class="spin"></div><div id="busyMsg">처리 중…</div></div>
+<div id="loginGate">
+  <h2 style="margin:0">JNFAM Batch Sheet</h2>
+  <div class="help">허용된 Google 계정으로 로그인해야 사용할 수 있습니다 (재고 현황 시스템과 같은 계정)</div>
+  <button class="btn pri" onclick="app.googleLogin()">Google 계정으로 로그인</button>
+  <div id="loginMsg"></div>
+</div>
+
+<script type="module">
+/* =====================================================================
+   JNFAM Batch Sheet (태블릿용)
+   - 원본: JNFAM_Batch_Sheet_R2 (Materials + Production 시트)
+   - Firestore (jnfam-ledger 프로젝트, 재고 현황 시스템과 공유)
+       batch_sheets   : 배치시트 문서 (작성중/완료)
+       batch_config   : main 문서 — 작업자 명단, SharePoint 설정, 기준값
+       inv_lots / inv_usage / inv_isos / inv_products : 재고 현황 시스템 (읽기 + 완료 시 ISO 충전 등록)
+   - PDF: html2canvas + jsPDF → SharePoint(Microsoft Graph, MSAL 로그인) 업로드
+   ===================================================================== */
+const FB_CFG={apiKey:"AIzaSyDB1-k-Xp98Sw3mx2AM3AxROo-Y4_4FZoY",authDomain:"jnfam-ledger.firebaseapp.com",projectId:"jnfam-ledger",
+  storageBucket:"jnfam-ledger.firebasestorage.app",messagingSenderId:"656610691213",appId:"1:656610691213:web:1d03f91bd8dd36b2283ac4"};
+const FB_URL='https://www.gstatic.com/firebasejs/10.12.2/';
+const COL={batch:'batch_sheets',cfg:'batch_config',products:'inv_products',lots:'inv_lots',usage:'inv_usage',isos:'inv_isos',hist:'inv_history'};
+const DEMO=new URLSearchParams(location.search).has('demo')||location.protocol==='file:';
+const DEFAULT_SHARE='https://jnfam.sharepoint.com/:f:/s/JNFAM/IgBZz-QhlluJRLK0n6we7ihLAcHkIf2hwlshHrU8WZVRHy8?e=ASFJPA';
+
+/* 엑셀 Materials 시트 수식 기준 품목 정의 */
+const PROD={
+  'HF':        {un:'1790',invCode:'1790',iso:'240003 (7)',iso2:'240002(1)',target:18700,req:'17 IBC',count:17,unit:1150,room:'300',v:'V3',name:'HF',drum:false},
+  'HNO3':      {un:'2031',invCode:'2031',iso:'240004 (2)',iso2:'',target:18600,req:'15 IBC',count:15,unit:1240,room:'200',v:'V2',name:'HNO3',drum:false},
+  'HCl (IBC)': {un:'1789',invCode:'1789',iso:'240001 (6)',iso2:'',target:18700,req:'17 IBC',count:17,unit:1100,room:'100',v:'V1',name:'HCl',drum:false},
+  'HCl (Drum)':{un:'1789',invCode:'1789',iso:'240001 (6)',iso2:'',target:18480,req:'22 pallet 88 Drum',count:88,unit:210,room:'100',v:'V1',name:'HCl',drum:true}
+};
+const PROD_KEYS=Object.keys(PROD);
+const PPE_ITEMS=[['goggle','보호안경'],['tyvek','Tyvac'],['glove','보호장갑'],['mask','보호마스크'],['apron','앞치마 (apron)'],['sleeve','팔토시'],['shoes','안전화']];
+const QC_ITEMS=['ISO Tank Valve check & open','Filling Room Quick 체결','ISO Ventilation Quick check & open','ISO Tank Operation Pressure check (0.5±0.1 bar)'];
+const VALVE_OPEN=['00','20','01','03','04','05','06','11','14'], VALVE_CLOSE=['02','07','08','09','10','12','13'];
+const AF_OPEN=['00','20','10','14'], AF_CLOSE=['08','11','13'];
+const STEPS=['Material','(1) PPE','(2) RM & ISO','(3) 설비 점검','(4) 투입 전 확인','(5) Valve · 투입','(6) Air Flushing','완료'];
+const DEF_CFG={workers:[],customers:['HWQ CTSV'],passMin:18200,passMax:19000,maxKg:19000,weighDangerLb:40000,weighPassLb:500,
+  ms:{clientId:'',tenantId:'',shareUrl:DEFAULT_SHARE,driveId:'',itemId:'',folderName:''}};
+
+const state={batches:[],products:[],lots:[],usage:[],isos:[],cfg:JSON.parse(JSON.stringify(DEF_CFG)),loaded:false,view:'list',step:0,listF:'active'};
+let cur=null, fb=null, AUM=null, auth=null, currentUser=null, unsubs=[], saveT=null;
+
+/* ---------------- 유틸 ---------------- */
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=n=>(Math.round(+n||0)).toLocaleString('en-US');
+const fmt1=n=>(+n||0).toLocaleString('en-US',{maximumFractionDigits:1});
+const pad=n=>String(n).padStart(2,'0');
+const dLocal=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+const today=()=>dLocal(new Date());
+const nowLocal=()=>{ const d=new Date(); return dLocal(d)+'T'+pad(d.getHours())+':'+pad(d.getMinutes()); };
+const dstr=v=>{ if(!v) return ''; if(typeof v==='string') return v.slice(0,10); if(v.toDate) return dLocal(v.toDate()); return ''; };
+const dt=v=>v?String(v).replace('T',' '):'';
+const uid=p=>p+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const who=()=>currentUser?currentUser.email:(DEMO?'demo':'');
+const num=v=>(v===''||v==null||isNaN(+v))?null:+v;
+function toast(m,ms=3000){ const t=$('toast'); t.textContent=m; t.style.display='block'; clearTimeout(t._h); t._h=setTimeout(()=>t.style.display='none',ms); }
+function busy(on,msg){ $('busy').style.display=on?'flex':'none'; if(msg) $('busyMsg').textContent=msg; }
+function openModal(html){ $('modalBox').innerHTML=html; $('modalBg').classList.add('open'); }
+function closeModal(){ $('modalBg').classList.remove('open'); }
+$('modalBg').addEventListener('mousedown',e=>{ if(e.target.id==='modalBg') closeModal(); });
+function getP(o,path){ return path.split('.').reduce((a,k)=>a==null?undefined:a[k],o); }
+function setP(o,path,v){ const ks=path.split('.'); let a=o; ks.slice(0,-1).forEach(k=>{ if(a[k]==null||typeof a[k]!=='object') a[k]=/^\d+$/.test(k)?[]:{}; a=a[k]; }); a[ks[ks.length-1]]=v; }
+function setConn(kind,text){ const C={ok:'#22c55e',wait:'#f59e0b',off:'#94a3b8',err:'#ef4444'}; $('conn').innerHTML=`<span class="dot" style="background:${C[kind]}"></span>${text}`; }
+
+/* ---------------- 재고 현황 시스템 계산 (inventory 앱과 동일 규칙) ---------------- */
+const invProd=k=>state.products.find(p=>String(p.code)===PROD[k].invCode&&(PROD[k].invCode!=='2031'||p.key==='HNO3_65'))||state.products.find(p=>String(p.code)===PROD[k].invCode)||null;
+function remMap(ex){ const m={}; state.usage.forEach(u=>{ if(u.lotId&&!(ex&&u.batchSheetId===ex)) m[u.lotId]=(m[u.lotId]||0)+(+u.qtyKg||0); }); return m; }
+function lotRem(l,rm){ rm=rm||remMap(); return Math.max(0,Math.round(((+l.qtyIn||0)-(rm[l.id]||0))*100)/100); }
+function availLots(k,keepIds){
+  const p=invProd(k); if(!p) return []; const rm=remMap(cur&&cur.id);
+  const cont=PROD[k].drum?'Drum':'IBC';
+  return state.lots.filter(l=>l.product===p.key&&(keepIds.includes(l.id)||((l.container||'IBC')===cont&&!l.hold&&lotRem(l,rm)>0.01)))
+    .sort((a,b)=>(dstr(a.receivedDate)||'').localeCompare(dstr(b.receivedDate)||''));
+}
+/* 현재고 선입선출 자동 배정: 필요 수량(IBC/Drum)만큼 입고일 순으로 Lot 채움 */
+function autoAlloc(k){ const pd=PROD[k]; const rm=remMap(cur&&cur.id); let left=pd.count; const rows=[];
+  for(const l of availLots(k,[])){ if(left<=0) break; const n=Math.min(left,Math.floor((lotRem(l,rm)+0.5)/pd.unit)); if(n<1) continue;
+    rows.push({lotId:l.id,count:String(n),unitKg:'',sourceLot:l.sourceLot,snap:{sourceLot:l.sourceLot,unitKg:l.unitKg,product:l.product}}); left-=n; }
+  return {rows:rows.length?rows:[{lotId:'',count:'',unitKg:''}],short:left}; }
+/* 현재고 요약 (용기 기준: IBC 모드는 IBC Lot, Drum 모드는 Drum Lot · HOLD 제외) */
+function curStock(k){ const pd=PROD[k]; const ls=availLots(k,[]); const rm=remMap(cur&&cur.id); const kg=ls.reduce((s,l)=>s+lotRem(l,rm),0); return {kg,ea:kg/pd.unit,n:ls.length}; }
+function nextBatchId(k,date){
+  const p=invProd(k); const pre=(p&&p.lotPrefix)||({HF:'JAHF',HNO3:'JAHN'}[k]||'JAHC'); const ymd=(date||today()).slice(2).replace(/-/g,'');
+  const used=new Set([...state.usage.map(u=>u.jnfamLot),...state.isos.map(i=>i.jnfamLot),...state.batches.filter(b=>!cur||b.id!==cur.id).map(b=>b.mat&&b.mat.batchId)].filter(Boolean));
+  for(const c of 'ABCDEFGHIJ'){ const s=`${pre}-${ymd}${c}`; if(!used.has(s)) return s; }
+  return `${pre}-${ymd}A`;
+}
+
+/* ---------------- 배치 모델 ---------------- */
+function newBatch(){
+  const k='HF', d=today();
+  return {id:uid('bs'),status:'작성중',createdBy:who(),createdAt:new Date().toISOString(),
+    mat:{mfgDate:d,product:k,batchId:'',customer:(state.cfg.customers||[])[0]||'',isoTank:PROD[k].iso,isoTank2:PROD[k].iso2,weighIn:'',weighOut:'',lots:[{lotId:'',count:'',unitKg:''}]},
+    ppe:{workers:[0,1,2,3].map(()=>({date:d,shift:'',dn:'',name:'',items:{}}))},
+    s2:{start:'',end:'',chk:{},sig:null,qc:QC_ITEMS.map(()=>({chk:false,sig:null}))},
+    s3:{start:'',end:'',pump:'',pumpSig:null,airP:'',pumpAct:'',scrubber:'',scrubberSig:null,compressor:'',compP:'',utilAct:'',vents:[false,false,false,false,false,false],ventSig:null,ventAct:''},
+    s4:{start:'',end:'',chk:{}},
+    s5:{start:'',end:'',open:{},close:{},sig:null,act:'',start2:'',end2:'',ibcChk:{},ibcAct:''},
+    s6:{start:'',end:'',ctrl:false,airP:'',isoP:'',sig1:null,open:{},close:{},sig:null,act:''},
+    done:{author:null}};
+}
+function ensure(b){ const n=newBatch(); for(const k of Object.keys(n)) if(b[k]==null) b[k]=n[k]; for(const s of ['mat','ppe','s2','s3','s4','s5','s6','done']) for(const k of Object.keys(n[s])) if(b[s][k]==null) b[s][k]=n[s][k]; return b; }
+const PK=()=>cur.mat.product, PD=()=>PROD[cur.mat.product]||PROD.HF;
+const locked=()=>cur&&cur.status==='완료';
+function matRows(b){ b=b||cur; const pd=PROD[b.mat.product]||PROD.HF;
+  return (b.mat.lots||[]).map(r=>{ const l=state.lots.find(x=>x.id===r.lotId)||(r.snap||{}); const unit=num(r.unitKg)??pd.unit; const cnt=num(r.count)||0;
+    return {...r,lot:l,sourceLot:l.sourceLot||r.sourceLot||'',unit,cnt,kg:Math.round(unit*cnt*100)/100}; }).filter(r=>r.lotId||r.cnt); }
+function matTotal(b){ return matRows(b).reduce((s,r)=>s+r.kg,0); }
+function matPass(b){ const t=matTotal(b); return t>=state.cfg.passMin&&t<=state.cfg.passMax; }
+function weigh(b){ b=b||cur; const wi=num(b.mat.weighIn), wo=num(b.mat.weighOut); if(wi==null||wo==null) return null; const bal=wi-wo;
+  return {bal,kg:Math.round(bal*0.4536),safe:bal>=state.cfg.weighDangerLb,pass:bal>state.cfg.weighPassLb}; }
+/* 투입 순서 목록: IBC는 1개씩, Drum은 팔레트(4 drum) 단위 */
+function ibcSeq(b){ b=b||cur; const pd=PROD[b.mat.product]||PROD.HF; const out=[];
+  matRows(b).forEach(r=>{ if(pd.drum){ let left=r.cnt; while(left>0){ const n=Math.min(4,left); out.push({lot:r.sourceLot,kg:n*r.unit,label:`${n} drum`}); left-=n; } }
+    else for(let i=0;i<r.cnt;i++) out.push({lot:r.sourceLot,kg:r.unit,label:'1 IBC'}); });
+  return out; }
+
+/* ---------------- 단계별 진행률 ---------------- */
+function stepProg(i,b){ b=b||cur; const c=[];
+  const S=v=>!!(v&&v.n);
+  if(i===0){ c.push(!!b.mat.batchId,!!b.mat.mfgDate,!!b.mat.isoTank,weigh(b)!=null,matRows(b).length>0,matPass(b)); }
+  if(i===1){ const w=b.ppe.workers.filter(x=>x.name&&x.name.n||x.name&&typeof x.name==='string'); if(!w.length) c.push(false); w.forEach(x=>{ c.push(!!x.dn); PPE_ITEMS.forEach(([k])=>c.push(!!x.items[k])); }); }
+  if(i===2){ c.push(!!b.s2.start,!!b.s2.end,...['isoUn','isoNo','isoName','weigh','cdsUn','cdsName','v105'].map(k=>!!b.s2.chk[k]),S(b.s2.sig),...b.s2.qc.flatMap(q=>[!!q.chk,S(q.sig)])); }
+  if(i===3){ c.push(!!b.s3.start,!!b.s3.end,!!b.s3.pump,S(b.s3.pumpSig),b.s3.airP!=='',!!b.s3.scrubber,S(b.s3.scrubberSig),!!b.s3.compressor,b.s3.compP!=='',...b.s3.vents.map(Boolean),S(b.s3.ventSig)); }
+  if(i===4){ c.push(!!b.s4.start,!!b.s4.end); matRows(b).forEach((r,j)=>c.push(!!b.s4.chk[j])); }
+  if(i===5){ c.push(!!b.s5.start,!!b.s5.end,...VALVE_OPEN.map(v=>!!b.s5.open[v]),...VALVE_CLOSE.map(v=>!!b.s5.close[v]),S(b.s5.sig),!!b.s5.start2,!!b.s5.end2); ibcSeq(b).forEach((r,j)=>c.push(!!b.s5.ibcChk[j])); }
+  if(i===6){ c.push(!!b.s6.start,!!b.s6.end,!!b.s6.ctrl,b.s6.airP!=='',b.s6.isoP!=='',S(b.s6.sig1),...AF_OPEN.map(v=>!!b.s6.open[v]),...AF_CLOSE.map(v=>!!b.s6.close[v]),S(b.s6.sig)); }
+  if(i===7){ c.push(S(b.done.author)); }
+  return [c.filter(Boolean).length,c.length];
+}
+
+/* ---------------- 저장 ---------------- */
+function touch(){ if(!cur||locked()) return; cur.updatedAt=new Date().toISOString(); cur.updatedBy=who(); clearTimeout(saveT); saveT=setTimeout(saveNow,600); }
+async function saveNow(){ clearTimeout(saveT); if(!cur) return; const data=JSON.parse(JSON.stringify(cur));
+  if(fb){ try{ await fb.setDoc(fb.doc(fb.db,COL.batch,cur.id),data); }catch(e){ toast('저장 실패: '+(e.code||e.message)); } }
+  else { const i=state.batches.findIndex(x=>x.id===cur.id); if(i>=0) state.batches[i]=data; else state.batches.unshift(data); } }
+async function saveCfg(){ const data=JSON.parse(JSON.stringify(state.cfg)); if(fb) await fb.setDoc(fb.doc(fb.db,COL.cfg,'main'),data); toast('설정 저장됨'); }
+
+/* ---------------- 공통 입력 위젯 ---------------- */
+const dis=()=>locked()?'disabled':'';
+const tog=(path,label,cls='')=>{ const on=!!getP(cur,path); return `<button class="tog ${cls} ${on?'on':''}" ${dis()} data-tog="${path}">${on?'✓ ':''}${label??'V'}</button>`; };
+const okno=(path)=>{ const v=getP(cur,path); return `<button class="tog ${v==='OK'?'on':''}" ${dis()} data-set="${path}" data-v="OK">OK</button> <button class="tog no ${v==='NO'?'on':''}" ${dis()} data-set="${path}" data-v="NO">NO</button>`; };
+const sig=(path,label='확인자 서명')=>{ const v=getP(cur,path); return v&&v.n?`<button class="sig on" ${dis()} data-sig="${path}">${esc(v.n)}<small>${esc(dt(v.t))}</small></button>`:`<button class="sig" ${dis()} data-sig="${path}">✍ ${label}</button>`; };
+const inp=(path,type='text',attrs='')=>`<input type="${type}" data-k="${path}" value="${esc(getP(cur,path)??'')}" ${dis()} ${attrs}>`;
+const timeRow=(ps,pe,title)=>`<div class="time-row"><div class="fld"><label>${title||'공정'} 시작 날짜 및 시간</label>${inp(ps,'datetime-local')}</div><button class="btn sm" ${dis()} data-now="${ps}">지금</button>
+  <div class="fld"><label>${title||'공정'} 종료 날짜 및 시간</label>${inp(pe,'datetime-local')}</div><button class="btn sm" ${dis()} data-now="${pe}">지금</button></div>`;
+const act=(path)=>`<div class="fld" style="margin-top:10px"><label>이상발생 시 조치된 사항</label><textarea data-k="${path}" ${dis()} placeholder="없으면 비워두세요">${esc(getP(cur,path)||'')}</textarea></div>`;
+
+/* ---------------- 렌더 ---------------- */
+function render(){
+  const m=$('main');
+  $('topBid').textContent=(state.view==='edit'&&cur)?(cur.mat.batchId||'(Batch ID 미정)'):'';
+  if(state.view==='edit'&&cur){ renderSteps(); $('stepsBar').style.display='flex'; }
+  else $('stepsBar').style.display='none';
+  const y=window.scrollY;
+  if(state.view==='list') m.innerHTML=vList();
+  else if(state.view==='settings') m.innerHTML=vSettings();
+  else if(state.view==='edit'&&cur){ m.innerHTML=[vMat,vPPE,vS2,vS3,vS4,vS5,vS6,vDone][state.step]()+navBar(); window.scrollTo(0,y); }
+}
+function renderSteps(){ $('stepsBar').innerHTML=STEPS.map((s,i)=>{ const [a,t]=stepProg(i); return `<button class="step ${state.step===i?'on':''}" onclick="app.step(${i})">${s}<span class="cnt ${a===t?'full':''}">${a}/${t}</span></button>`; }).join(''); }
+const navBar=()=>`<div class="navbar"><button class="btn" ${state.step===0?'disabled':''} onclick="app.step(${state.step-1})">← 이전</button>${state.step<7?`<button class="btn pri" onclick="app.step(${state.step+1})">다음 →</button>`:''}</div>`;
+
+function vList(){
+  if(!state.loaded&&!DEMO) return `<div class="card help">불러오는 중…</div>`;
+  const f=state.listF; let bs=[...state.batches].sort((a,b)=>(b.mat&&b.mat.mfgDate||'').localeCompare(a.mat&&a.mat.mfgDate||'')||(b.createdAt||'').localeCompare(a.createdAt||''));
+  if(f==='active') bs=bs.filter(b=>b.status!=='완료'); else if(f==='done') bs=bs.filter(b=>b.status==='완료');
+  return `<div class="row" style="margin-bottom:14px"><button class="btn pri" onclick="app.newBatch()">＋ 새 배치 작성</button><span class="sp" style="flex:1"></span>
+    ${[['active','작성중'],['done','완료'],['all','전체']].map(([k,l])=>`<button class="tog ${f===k?'on':''}" onclick="app.listF('${k}')">${l}</button>`).join('')}</div>
+    ${bs.map(b=>{ ensure(b); const t=matTotal(b); const tot=STEPS.map((s,i)=>stepProg(i,b)).reduce((a,[x,y])=>[a[0]+x,a[1]+y],[0,0]);
+      return `<div class="card list-card" onclick="app.open('${b.id}')">
+      <div>${b.status==='완료'?'<span class="pill ok">완료</span>':'<span class="pill warn">작성중</span>'}</div>
+      <div><div class="bn">${esc(b.mat.batchId||'(Batch ID 미정)')}</div><div class="help">${esc(b.mat.product)} · MFG ${esc(b.mat.mfgDate)} · ${esc(b.mat.customer||'')} · ISO ${esc(b.mat.isoTank||'')} · ${fmt(t)} kg</div>
+      ${b.status==='완료'?`<div class="help">완료 ${esc(dt(b.done.at||''))} · ${esc(b.done.author&&b.done.author.n||'')} ${b.done.spUrl?'· <span class="pill blue">SharePoint 저장됨</span>':'· <span class="pill gray">SharePoint 미저장</span>'}</div>`:''}</div>
+      <div class="help">${b.status==='완료'?'':`진행 ${tot[0]}/${tot[1]}`}</div></div>`; }).join('')||'<div class="card help">배치가 없습니다</div>'}`;
+}
+
+/* ---- Step 0: Material Sheet ---- */
+function vMat(){
+  const b=cur, pd=PD(), w=weigh(), rows=matRows(), tot=matTotal(), pass=matPass(); const ip=invProd(PK());
+  const keep=b.mat.lots.map(r=>r.lotId).filter(Boolean); const lots=availLots(PK(),keep); const rm=remMap(cur.id);
+  const lotOpts=(sel)=>`<option value="">— 재고 Lot 선택 —</option>`+lots.map(l=>{ const r=lotRem(l,rm); const u=pd.unit; return `<option value="${l.id}" ${l.id===sel?'selected':''}>${esc(l.sourceLot||'(no lot)')} · 입고 ${dstr(l.receivedDate)} · 현재고 ${fmt(r)}kg (${fmt1(r/u)} ${l.container||'EA'})${l.hold?' · HOLD':''}</option>`; }).join('');
+  return `<div class="card"><h2>Material Sheet</h2>
+    ${locked()?'<div class="banner ok">작성 완료된 배치입니다 (읽기 전용)</div>':''}
+    <div class="fld" style="margin-bottom:12px"><label>Product</label><div class="prodsel">${PROD_KEYS.map(k=>{ const cs=curStock(k); return `<button class="tog ${PK()===k?'on':''}" ${dis()} onclick="app.setProd('${k}')" style="flex-direction:column;padding:6px 14px">${k}<small style="font-weight:600;font-size:12px;color:${cs.kg>0?'var(--mut)':'var(--bad)'}">${cs.kg>0?`현재고 ${fmt(cs.kg)} kg · ${fmt1(cs.ea)} ${PROD[k].drum?'Drum':'IBC'}`:'현재고 없음'}</small></button>`; }).join('')}</div></div>
+    <div class="grid">
+      <div class="fld"><label>MFG Start Date</label>${inp('mat.mfgDate','date')}</div>
+      <div class="fld"><label>Batch ID</label><div class="row" style="flex-wrap:nowrap">${inp('mat.batchId','text','style="font-family:ui-monospace,monospace;font-weight:700"')}<button class="btn sm" style="white-space:nowrap" ${dis()} onclick="app.genId()">자동</button></div></div>
+      <div class="fld"><label>Customer</label><input list="custList" data-k="mat.customer" value="${esc(b.mat.customer)}" ${dis()}><datalist id="custList">${(state.cfg.customers||[]).map(c=>`<option value="${esc(c)}">`).join('')}</datalist></div>
+      <div class="fld"><label>ISO Tank #</label>${inp('mat.isoTank')}</div>
+      ${pd.iso2||b.mat.isoTank2?`<div class="fld"><label>ISO Tank # (2)</label>${inp('mat.isoTank2')}</div>`:''}
+      <div class="fld"><label>Target Amount (kg)</label><div class="ro">${fmt(pd.target)}</div></div>
+      <div class="fld"><label>Required IBC or Pallet</label><div class="ro">${esc(pd.req)}</div></div>
+      <div class="fld"><label>UN # · Filling Room · Valve</label><div class="ro">UN ${pd.un} · Room ${pd.room} · ${pd.v}</div></div>
+    </div></div>
+
+  <div class="card"><h2>ISO Tank's weighing Check <span class="help">(반드시 계근 자료 보고 작성 · 단위 lb)</span></h2>
+    <div class="grid">
+      <div class="fld"><label>Weigh-In (lb)</label>${inp('mat.weighIn','number','inputmode="decimal"')}</div>
+      <div class="fld"><label>Weigh-Out (lb)</label>${inp('mat.weighOut','number','inputmode="decimal"')}</div>
+      <div class="fld"><label>前 customer Loading (Balance)</label><div class="ro">${w?`${fmt(w.bal)} lb · ${fmt(w.kg)} kg`:'—'}</div></div>
+      <div class="fld"><label>판정</label><div class="ro">${w?(w.safe?'<span class="pill ok">안전 투입 가능</span>':'<span class="pill bad">위험 · 투입 검토 필요</span>'):'—'}</div></div>
+    </div>
+    <div class="help" style="margin-top:8px">Balance ${fmt(state.cfg.weighDangerLb)} lb 미만이면 "위험 투입 검토 필요" (엑셀 기준). 참고: Chassis 7,800 / Tri-axle 9,500 / Sleeper cab 19,500 / Fuel 500 lb</div></div>
+
+  <div class="card"><h2>1. Material Check Sheet <span class="help">재고 현황 시스템 Lot 연동${ip?` · ${esc(ip.name)}`:''}</span></h2>
+    ${!ip?`<div class="banner bad">재고 현황 시스템에서 품목 코드 ${pd.invCode}를 찾지 못했습니다</div>`:''}
+    ${ip&&!locked()?(()=>{ const cs=curStock(PK()); const need=pd.count;
+      return cs.kg>0?`<div class="banner blue">현재고 (${pd.drum?'Drum':'IBC'}, HOLD 제외): <b>${fmt(cs.kg)} kg · ${fmt1(cs.ea)} ${pd.drum?'Drum':'IBC'}</b> · ${cs.n}개 Lot — 입고일 순(선입선출)으로 표시${cs.ea+0.01<need?` · <b style="color:var(--bad)">필요 수량 ${need} 대비 부족</b>`:''}</div>`
+        :`<div class="banner bad">현재 ${esc(ip.name)} ${pd.drum?'Drum':'IBC'} 재고가 없습니다 — 재고 현황 시스템을 확인하세요</div>`; })():''}
+    <div style="overflow-x:auto"><table class="t"><thead><tr><th>#</th><th>JNF Lot # / Supplier Lot# (재고)</th><th class="num">${pd.drum?'Drum':'IBC'} 수량</th><th class="num">실제 ${pd.drum?'Drum':'IBC'} 무게(kg)</th><th class="num">실제 사용량(kg)</th><th></th></tr></thead><tbody>
+    ${b.mat.lots.map((r,i)=>{ const mr=matRows({mat:{...b.mat,lots:[r]}})[0]; const l=state.lots.find(x=>x.id===r.lotId); const over=l&&mr&&mr.kg>lotRem(l,rm)+0.01;
+      return `<tr><td>${i+1}</td><td style="min-width:320px"><select data-k="mat.lots.${i}.lotId" ${dis()}>${lotOpts(r.lotId)}</select>${!l&&r.sourceLot?`<div class="help">${esc(r.sourceLot)} (재고 목록에 없음)</div>`:''}${over?`<div class="pill bad" style="margin-top:4px">현재고 초과 (${fmt(lotRem(l,rm))} kg)</div>`:''}</td>
+      <td style="width:110px">${inp(`mat.lots.${i}.count`,'number','inputmode="numeric"')}</td>
+      <td style="width:150px"><input type="number" inputmode="decimal" data-k="mat.lots.${i}.unitKg" value="${esc(r.unitKg)}" placeholder="${pd.unit}" ${dis()}></td>
+      <td class="num"><b>${mr?fmt(mr.kg):'—'}</b></td><td>${locked()?'':`<button class="btn sm danger" onclick="app.delLot(${i})">삭제</button>`}</td></tr>`; }).join('')}
+    </tbody></table></div>
+    ${locked()?'':`<div class="row" style="margin-top:8px">${b.mat.lots.length>=8?'':'<button class="btn sm" onclick="app.addLot()">＋ Lot 추가</button>'}<button class="btn sm pri" onclick="app.alloc()">현재고 자동 배정 (선입선출 ${pd.count} ${pd.drum?'Drum':'IBC'})</button></div>`}
+    <div class="row" style="margin-top:14px;font-size:17px"><span>합계 <b>${fmt1(rows.reduce((s,r)=>s+r.cnt,0))} ${pd.drum?'Drum':'IBC'}</b></span><span>·</span><span><b>${fmt(tot)} kg</b></span>
+      <span class="pill ${pass?'ok':'bad'}">${pass?'Pass':'Fail'}</span><span class="help">기준 ${fmt(state.cfg.passMin)} ~ ${fmt(state.cfg.passMax)} kg · Target ${fmt(pd.target)} kg (${tot-pd.target>=0?'+':''}${fmt(tot-pd.target)})</span></div>
+    ${tot>state.cfg.maxKg?`<div class="banner bad" style="margin-top:10px">투입 시 최대 ${fmt(state.cfg.maxKg/1000)} Ton 넘지 말 것 — 현재 ${fmt(tot)} kg</div>`:''}
+    <div class="help" style="margin-top:8px">실제 무게를 비워두면 기본 단위중량(${fmt(pd.unit)} kg)이 적용됩니다. 작성 완료 시 재고 현황 시스템에 "ISO 충전"으로 차감되고 ISO 탱크(대기)가 생성됩니다.</div>
+  </div>`;
+}
+
+/* ---- Step 1: PPE ---- */
+function vPPE(){
+  return `<div class="card"><h2>(1) PPE check <span class="help">안전보호구 착용확인 — 성명 선택 후 V 체크</span></h2>
+  <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr))">${cur.ppe.workers.map((w,i)=>`<div class="worker">
+    <div class="row" style="justify-content:space-between"><b>작업자 ${i+1}</b>${sig(`ppe.workers.${i}.name`,'성명 선택')}</div>
+    <div class="grid" style="grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+      <div class="fld"><label>Date</label>${inp(`ppe.workers.${i}.date`,'date')}</div>
+      <div class="fld"><label>Shift Group</label>${inp(`ppe.workers.${i}.shift`)}</div></div>
+    <div class="row" style="margin-top:8px"><button class="tog ${w.dn==='Day'?'on':''}" ${dis()} data-set="ppe.workers.${i}.dn" data-v="Day">Day</button><button class="tog ${w.dn==='Night'?'on':''}" ${dis()} data-set="ppe.workers.${i}.dn" data-v="Night">Night</button>
+      ${locked()?'':`<button class="btn sm" onclick="app.ppeAll(${i})">전체 V</button>`}</div>
+    <div class="items">${PPE_ITEMS.map(([k,l])=>tog(`ppe.workers.${i}.items.${k}`,l)).join('')}</div></div>`).join('')}</div>
+  <div class="help" style="margin-top:10px">성명이 선택된 작업자만 진행률·PDF에 반영됩니다.</div></div>`;
+}
+
+/* ---- Step 2: RM & ISO Matching ---- */
+function vS2(){ const pd=PD(), w=weigh();
+  const r=(k,l,v)=>`<div class="chk-row"><div class="lb">${l}<small>작업 지도값: <b>${esc(v)}</b></small></div><div></div>${tog('s2.chk.'+k,'Check')}</div>`;
+  return `<div class="card"><h2>(2) 투입 전 RM & ISO TANK Matching check</h2>${timeRow('s2.start','s2.end')}
+  <h3>ISO Tank</h3>
+  ${r('isoUn','ISO Tank UN#',pd.un)}${r('isoNo','ISO Tank #',[cur.mat.isoTank,cur.mat.isoTank2].filter(Boolean).join(' / '))}${r('isoName','Name',pd.name)}
+  <div class="chk-row"><div class="lb">Weighbridge check<small>Before-and-after loading weight check · RM input is allowed only when marked as 'Pass'<br>
+    Weigh-in ${w?fmt(cur.mat.weighIn):'—'} / Weigh-out ${w?fmt(cur.mat.weighOut):'—'} / Balance ${w?fmt(w.bal):'—'} lb ${w?`<span class="pill ${w.pass?'ok':'bad'}">${w.pass?'Pass':'Fail'}</span>`:''}</small></div><div></div>${tog('s2.chk.weigh','Check')}</div>
+  <div class="row" style="justify-content:flex-end;margin-top:10px">${sig('s2.sig')}</div>
+  <h3>Filling Room (${pd.room})</h3>
+  ${r('cdsUn','CDS UN #',pd.un)}${r('cdsName','Name',pd.name)}
+  <div class="chk-row"><div class="lb">V-105 Pressure check<small>ISO tank Empty 확인</small></div><div></div>${tog('s2.chk.v105','Check')}</div>
+  <h3>Quick Connector</h3>
+  ${QC_ITEMS.map((q,i)=>`<div class="chk-row"><div class="lb">${esc(q)}</div>${tog(`s2.qc.${i}.chk`,'Check')}${sig(`s2.qc.${i}.sig`)}</div>`).join('')}
+  </div>`;
+}
+
+/* ---- Step 3: Facility ---- */
+function vS3(){
+  return `<div class="card"><h2>(3) Facility & Equipment Check</h2>
+  <div class="help" style="margin-bottom:10px">1. 원료 투입 전 설비·장치 가동 상태 확인 · 2. Scrubber 가동 상태 확인 · 3. Compressor 압력·가동 상태 확인 · 4. ISO Tank Quick connect 연결 확인</div>
+  ${timeRow('s3.start','s3.end')}
+  <h3>Pump</h3>
+  <div class="chk-row"><div class="lb">(1) 작동 확인</div><div>${okno('s3.pump')}</div>${sig('s3.pumpSig')}</div>
+  <div class="chk-row"><div class="lb">(2) Air 가압 압력 (MPa)<small>작업 지도값: &gt; 0.4 MPa ${num(cur.s3.airP)!=null?(+cur.s3.airP>0.4?'<span class="pill ok">OK</span>':'<span class="pill bad">기준 미달</span>'):''}</small></div><div style="width:160px">${inp('s3.airP','number','inputmode="decimal" step="0.01"')}</div><div></div></div>
+  ${act('s3.pumpAct')}
+  <h3>Utility</h3>
+  <div class="chk-row"><div class="lb">(1) Scrubber 가동 확인</div><div>${okno('s3.scrubber')}</div>${sig('s3.scrubberSig')}</div>
+  <div class="chk-row"><div class="lb">(2) Compressor 가동 확인<small>작업 지도값: &gt; 0.5 MPa ${num(cur.s3.compP)!=null?(+cur.s3.compP>0.5?'<span class="pill ok">OK</span>':'<span class="pill bad">기준 미달</span>'):''}</small></div><div>${okno('s3.compressor')}</div><div style="width:140px">${inp('s3.compP','number','inputmode="decimal" step="0.01" placeholder="MPa"')}</div></div>
+  ${act('s3.utilAct')}
+  <h3>Ventilation — Ventilation valve Open</h3>
+  <div class="row">${[0,1,2,3,4,5].map(i=>tog(`s3.vents.${i}`,String(i+1))).join('')}<span style="flex:1"></span>${sig('s3.ventSig')}</div>
+  ${act('s3.ventAct')}</div>`;
+}
+
+/* ---- Step 4: 원료 투입 전 확인 ---- */
+function vS4(){ const pd=PD(), rows=matRows();
+  return `<div class="card"><h2>(4) 원료 투입 전 확인</h2>
+  <div class="help" style="margin-bottom:10px">1. 투입 원재료를 반드시 확인한다 (HF/HNO3/HCl) · 2. 투입할 원재료를 Filling Room 앞에 대기시킨 후 실제 투입할 양과 원재료를 다시 확인한다</div>
+  ${timeRow('s4.start','s4.end')}
+  <div style="overflow-x:auto"><table class="t"><thead><tr><th>공정 구분</th><th>UN #</th><th>원재료명</th><th>JNFAM No.</th><th>Supplier Lot#</th><th class="num">준비량(kg)</th><th>확인</th></tr></thead><tbody>
+  ${rows.map((r,j)=>`<tr><td>Raw Materials</td><td>${pd.un}</td><td>${esc(pd.name)}</td><td class="mono">${esc(cur.mat.batchId)}</td><td>${esc(r.sourceLot)}</td><td class="num">${fmt(r.kg)} <span class="help">(${r.cnt} × ${fmt(r.unit)})</span></td><td>${tog(`s4.chk.${j}`,'V')}</td></tr>`).join('')||'<tr><td colspan="7" class="help">Material Sheet에서 Lot을 먼저 선택하세요</td></tr>'}
+  </tbody><tfoot><tr><td colspan="5"><b>합계</b></td><td class="num"><b>${fmt(matTotal())}</b></td><td></td></tr></tfoot></table></div></div>`;
+}
+
+/* ---- Step 5: Valve check + 투입 원재료 확인 ---- */
+function vS5(){ const pd=PD(), seq=ibcSeq(); const done=seq.filter((r,j)=>cur.s5.ibcChk[j]); const dkg=done.reduce((s,r)=>s+r.kg,0);
+  return `<div class="card"><h2>(5) 원료 투입 전 Valve check</h2>
+  <div class="help" style="margin-bottom:10px">1. 투입 전 ISO Tank와 CDS Quick Connect 연결 · 2. ISO Tank Ventilation 연결</div>
+  ${timeRow('s5.start','s5.end','Valve check')}
+  <h3>Open Valve</h3><div class="row">${VALVE_OPEN.map(v=>tog(`s5.open.${v}`,`${pd.v}-${v}`)).join('')}</div>
+  <h3>Close Valve</h3><div class="row">${VALVE_CLOSE.map(v=>tog(`s5.close.${v}`,`${pd.v}-${v}`)).join('')}</div>
+  <div class="row" style="justify-content:flex-end;margin-top:10px">${sig('s5.sig')}</div>
+  ${act('s5.act')}</div>
+  <div class="card"><h2>원료 확인 — 투입 원재료 확인 <span class="help">투입할 때마다 체크</span></h2>
+  ${timeRow('s5.start2','s5.end2','투입')}
+  <div class="row" style="margin-bottom:10px;font-size:17px">투입 <b>${done.length}/${seq.length}</b> · <b>${fmt(dkg)} / ${fmt(matTotal())} kg</b></div>
+  <div style="overflow-x:auto"><table class="t"><thead><tr><th>순번</th><th>UN #</th><th>Batch ID (Lot #)</th><th>단위</th><th class="num">kg</th><th>Check</th></tr></thead><tbody>
+  ${seq.map((r,j)=>`<tr><td>${j+1}</td><td>${pd.un}</td><td>${esc(r.lot)}</td><td>${r.label}</td><td class="num">${fmt(r.kg)}</td><td>${tog(`s5.ibcChk.${j}`,'V')}</td></tr>`).join('')||'<tr><td colspan="6" class="help">Material Sheet에서 Lot과 수량을 먼저 입력하세요</td></tr>'}
+  </tbody></table></div>${act('s5.ibcAct')}</div>`;
+}
+
+/* ---- Step 6: Air Flushing ---- */
+function vS6(){ const pd=PD(); const a=num(cur.s6.airP);
+  return `<div class="card"><h2>(6) 투입 완료 후 Air Flushing</h2>
+  <div class="help" style="margin-bottom:10px">1. 투입 완료 후 Air flushing · 2. ISO Tank Ventilation 연결</div>
+  ${timeRow('s6.start','s6.end')}
+  <div class="chk-row"><div class="lb">Control valve<small>${pd.v}-09</small></div><div></div>${tog('s6.ctrl','Check')}</div>
+  <div class="chk-row"><div class="lb">Air 압력 확인 (bar)<small>작업 지도값: 0.4~0.5 Bar ${a!=null?(a>=0.4&&a<=0.5?'<span class="pill ok">OK</span>':'<span class="pill bad">기준 벗어남</span>'):''}</small></div><div style="width:160px">${inp('s6.airP','number','inputmode="decimal" step="0.01"')}</div><div></div></div>
+  <div class="chk-row"><div class="lb">ISO Tank pressure</div><div style="width:160px">${inp('s6.isoP','number','inputmode="decimal" step="0.01"')}</div>${sig('s6.sig1')}</div>
+  <h3>Open Valve</h3><div class="row">${AF_OPEN.map(v=>tog(`s6.open.${v}`,`${pd.v}-${v}`)).join('')}</div>
+  <h3>Close Valve</h3><div class="row">${AF_CLOSE.map(v=>tog(`s6.close.${v}`,`${pd.v}-${v}`)).join('')}</div>
+  <div class="row" style="justify-content:flex-end;margin-top:10px">${sig('s6.sig')}</div>
+  ${act('s6.act')}</div>`;
+}
+
+/* ---- Step 7: 완료 ---- */
+function vDone(){ const b=cur, pd=PD(), w=weigh(), tot=matTotal();
+  const miss=STEPS.slice(0,7).map((s,i)=>{ const [a,t]=stepProg(i); return a<t?`${s} (${a}/${t})`:null; }).filter(Boolean);
+  const warn=[]; if(!matPass()) warn.push(`Material 합계 ${fmt(tot)} kg — Fail (기준 ${fmt(state.cfg.passMin)}~${fmt(state.cfg.passMax)})`);
+  if(w&&!w.pass) warn.push('Weighbridge Balance Fail'); if(w&&!w.safe) warn.push('계근 판정: 위험 투입 검토 필요');
+  const ms=state.cfg.ms||{}; const spOk=!!(ms.clientId&&ms.shareUrl);
+  if(locked()) return `<div class="card"><h2>작성 완료 <span class="pill ok">완료</span></h2>
+    <div class="kv"><b>Batch ID</b><span>${esc(b.mat.batchId)}</span><b>작성자</b><span>${esc(b.done.author&&b.done.author.n||'')} · ${esc(dt(b.done.at||''))}</span>
+    <b>재고 등록</b><span>${b.done.invIsoId?`ISO 충전 등록됨 (${fmt(tot)} kg · ISO ${esc(b.mat.isoTank)})`:'—'}</span>
+    <b>PDF</b><span>${esc(b.done.pdfName||'')}</span><b>SharePoint</b><span>${b.done.spUrl?`<a href="${esc(b.done.spUrl)}" target="_blank">폴더에서 열기</a>`:'<span class="pill gray">미저장</span>'}</span></div>
+    <div class="row" style="margin-top:16px"><button class="btn" onclick="app.pdf('download')">PDF 다운로드</button>
+      <button class="btn pri" ${spOk?'':'disabled'} onclick="app.pdf('sp')">SharePoint에 다시 저장</button>
+      <button class="btn danger" onclick="app.reopen()">완료 취소 (재고 등록 되돌리기)</button></div></div>`;
+  return `<div class="card"><h2>작성 완료</h2>
+    <div class="kv" style="margin-bottom:14px"><b>Batch ID</b><span>${esc(b.mat.batchId||'-')}</span><b>Product</b><span>${esc(b.mat.product)} · UN ${pd.un}</span><b>ISO Tank</b><span>${esc([b.mat.isoTank,b.mat.isoTank2].filter(Boolean).join(' / '))}</span>
+      <b>Customer</b><span>${esc(b.mat.customer)}</span><b>투입량</b><span>${fmt(tot)} kg (${matRows().map(r=>`${esc(r.sourceLot)} ${r.cnt}`).join(', ')})</span></div>
+    ${miss.length?`<div class="banner warn"><b>미입력 항목</b><br>${miss.map(esc).join('<br>')}</div>`:'<div class="banner ok">모든 체크 항목이 입력되었습니다</div>'}
+    ${warn.length?`<div class="banner bad">${warn.map(esc).join('<br>')}</div>`:''}
+    <div class="chk-row"><div class="lb">작성자 서명</div><div></div>${sig('done.author','작성자 선택')}</div>
+    <div class="banner blue" style="margin-top:12px">작성 완료를 누르면<br>① 재고 현황 시스템에 Lot별 "ISO 충전" 차감 + ISO 탱크(대기, JNFAM Lot = Batch ID) 생성<br>② PDF 생성 → ${spOk?'SharePoint Batch Sheet 폴더에 저장':'<b>SharePoint 미설정 — PDF 다운로드만 됩니다 (설정 탭)</b>'}<br>③ 배치는 읽기 전용으로 잠깁니다</div>
+    <div class="row" style="margin-top:12px"><button class="btn" onclick="app.pdf('preview')">PDF 미리보기</button><button class="btn ok" onclick="app.complete()">작성 완료 → 재고 등록 + PDF 저장</button>
+      <span style="flex:1"></span><button class="btn danger" onclick="app.delBatch()">배치 삭제</button></div></div>`;
+}
+
+/* ---------------- 설정 ---------------- */
+function vSettings(){ const c=state.cfg, ms=c.ms||{};
+  return `<div class="card"><h2>작업자 명단 <span class="help">서명·PPE 성명 선택 목록</span></h2>
+    <textarea id="cfgWorkers" style="width:100%;min-height:140px;border:1px solid var(--line);border-radius:10px;padding:10px" placeholder="한 줄에 한 명">${esc((c.workers||[]).join('\n'))}</textarea>
+    <h3>고객사 목록</h3><textarea id="cfgCust" style="width:100%;min-height:70px;border:1px solid var(--line);border-radius:10px;padding:10px">${esc((c.customers||[]).join('\n'))}</textarea>
+    <h3>판정 기준</h3><div class="grid">
+      <div class="fld"><label>Material 합계 Pass 최소(kg)</label><input type="number" id="cfgMin" value="${c.passMin}"></div>
+      <div class="fld"><label>Material 합계 Pass 최대(kg)</label><input type="number" id="cfgMax" value="${c.passMax}"></div>
+      <div class="fld"><label>투입 최대(kg)</label><input type="number" id="cfgMaxKg" value="${c.maxKg}"></div>
+      <div class="fld"><label>계근 위험 기준 Balance(lb)</label><input type="number" id="cfgDanger" value="${c.weighDangerLb}"></div>
+      <div class="fld"><label>Weighbridge Pass Balance 초과(lb)</label><input type="number" id="cfgWPass" value="${c.weighPassLb}"></div></div>
+    <div class="row" style="margin-top:14px"><button class="btn pri" onclick="app.saveSettings()">저장</button></div></div>
+  <div class="card"><h2>SharePoint 연결 (Microsoft 365)</h2>
+    <div class="help" style="margin-bottom:10px">Microsoft Entra ID에 앱을 등록한 뒤 Client ID / Tenant ID를 입력하세요. 리디렉션 URI(SPA): <code>${esc(location.origin+location.pathname)}</code></div>
+    <div class="grid">
+      <div class="fld"><label>Application (client) ID</label><input id="msClient" value="${esc(ms.clientId||'')}"></div>
+      <div class="fld"><label>Directory (tenant) ID</label><input id="msTenant" value="${esc(ms.tenantId||'')}"></div></div>
+    <div class="fld" style="margin-top:10px"><label>Batch Sheet 폴더 공유 링크</label><input id="msShare" value="${esc(ms.shareUrl||DEFAULT_SHARE)}"></div>
+    <div class="help" style="margin-top:8px">연결된 폴더: ${ms.itemId?`<span class="pill ok">${esc(ms.folderName||'확인됨')}</span>`:'<span class="pill gray">미확인</span>'} · MS 로그인: ${esc(msAccount()||'없음')}</div>
+    <div class="row" style="margin-top:12px"><button class="btn pri" onclick="app.saveMs()">저장 + 폴더 연결 테스트</button>${msAccount()?'<button class="btn" onclick="app.msLogout()">MS 로그아웃</button>':''}</div></div>
+  <div class="card help">Firebase: <code>${FB_CFG.projectId}</code> · 컬렉션 <code>batch_sheets</code> <code>batch_config</code> (+ 재고 <code>inv_*</code>) · 사용자 ${esc(who()||'-')} ${currentUser?'· <a href="#" onclick="app.logout();return false">로그아웃</a>':''}${DEMO?' · <b>DEMO 모드 (저장 안 됨)</b>':''}</div>`;
+}
+
+/* ---------------- 이벤트 (위임) ---------------- */
+document.addEventListener('click',e=>{
+  const t=e.target.closest('[data-tog],[data-set],[data-sig],[data-now]'); if(!t||!cur||locked()||t.disabled) return;
+  if(t.dataset.tog){ setP(cur,t.dataset.tog,!getP(cur,t.dataset.tog)); touch(); render(); }
+  else if(t.dataset.set){ const p=t.dataset.set, v=t.dataset.v; setP(cur,p,getP(cur,p)===v?'':v); touch(); render(); }
+  else if(t.dataset.now){ setP(cur,t.dataset.now,nowLocal()); touch(); render(); }
+  else if(t.dataset.sig){ pickName(t.dataset.sig); }
+});
+document.addEventListener('change',e=>{
+  const t=e.target; if(!t.dataset||!t.dataset.k||!cur||locked()) return;
+  const p=t.dataset.k; setP(cur,p,t.value);
+  if(/^mat\.lots\.\d+\.lotId$/.test(p)){ const i=+p.split('.')[2]; const l=state.lots.find(x=>x.id===t.value); const r=cur.mat.lots[i];
+    r.sourceLot=l?l.sourceLot:''; r.snap=l?{sourceLot:l.sourceLot,unitKg:l.unitKg,product:l.product}:null;
+    if(l&&!r.count){ const pd=PD(); const others=matRows().filter((x,j)=>x!==r).reduce((s,x)=>s+x.cnt,0); const u=pd.unit; r.count=String(Math.max(0,Math.min(pd.count-others,Math.floor(lotRem(l)/u)))); } }
+  if(p==='mat.mfgDate'&&cur.mat.batchId&&/-\d{6}[A-J]$/.test(cur.mat.batchId)) cur.mat.batchId=nextBatchId(PK(),cur.mat.mfgDate);
+  touch(); render();
+});
+function pickName(path){
+  const ws=state.cfg.workers||[]; const v=getP(cur,path);
+  openModal(`<h3>이름 선택</h3><div class="help">선택 시 이름과 현재 시각이 기록됩니다</div>
+    <div class="names">${ws.map(n=>`<button class="btn ${v&&v.n===n?'pri':''}" onclick="app.sigSet('${path}',this.textContent)">${esc(n)}</button>`).join('')||'<div class="help">설정 탭에서 작업자 명단을 등록하세요</div>'}</div>
+    <div class="row"><input id="sigFree" placeholder="직접 입력" style="flex:1;border:1px solid var(--line);border-radius:10px;padding:10px;min-height:44px"><button class="btn pri" onclick="app.sigSet('${path}',$('sigFree').value)">확인</button></div>
+    <div class="row" style="margin-top:14px;justify-content:space-between">${v&&v.n?`<button class="btn danger" onclick="app.sigSet('${path}','')">서명 지우기</button>`:'<span></span>'}<button class="btn" onclick="app.closeModal()">닫기</button></div>`);
+}
+
+/* ---------------- 작성 완료: 재고 등록 ---------------- */
+async function registerInventory(){
+  const b=cur, pd=PD(), ip=invProd(PK()); if(!ip) throw new Error('재고 품목을 찾을 수 없습니다');
+  const rows=matRows().filter(r=>r.lotId&&r.kg>0); if(!rows.length) throw new Error('투입 Lot이 없습니다');
+  const date=b.mat.mfgDate||today(), jl=b.mat.batchId, cust=b.mat.customer||'', note=`Batch Sheet ${jl}`;
+  const isoId=uid('is'), uids=[], now=new Date().toISOString(), base={createdBy:who(),createdAt:now,updatedBy:who(),updatedAt:now};
+  const ops=rows.map(r=>{ const id=uid('us'); uids.push(id); return {col:COL.usage,data:{id,lotId:r.lotId,product:ip.key,date,type:'ISO충전',qtyKg:r.kg,ea:r.cnt,customer:cust,jnfamLot:jl,note,isoId,batchSheetId:b.id,...base}}; });
+  const tot=rows.reduce((s,r)=>s+r.kg,0);
+  ops.push({col:COL.isos,data:{id:isoId,product:ip.key,tankNo:[b.mat.isoTank,b.mat.isoTank2].filter(Boolean).join(' / '),qtyKg:tot,fillDate:date,status:'대기',customer:cust,jnfamLot:jl,note,sourceUsageIds:uids,shipDate:'',batchSheetId:b.id,...base}});
+  const h={id:uid('h'),tsMs:Date.now(),ts:now,user:who()||'-',userName:currentUser?(currentUser.displayName||''):'',action:'ISO 충전',kind:'out',col:COL.usage,docId:uids[0],product:ip.key,
+    summary:`${ip.name} · ${fmt(tot)} kg · ${cust} · ${jl} · Lot ${rows.map(r=>`${r.sourceLot}(${fmt(r.kg)})`).join(', ')} · Batch Sheet`,changes:[]};
+  if(fb){ const bt=fb.writeBatch(fb.db); ops.forEach(o=>bt.set(fb.doc(fb.db,o.col,o.data.id),o.data)); await bt.commit(); try{ await fb.setDoc(fb.doc(fb.db,COL.hist,h.id),h); }catch(e){ console.warn(e); } }
+  else { ops.forEach(o=>(o.col===COL.usage?state.usage:state.isos).push(o.data)); }
+  return {isoId,uids};
+}
+async function complete(){
+  const b=cur; if(locked()) return;
+  if(!b.mat.batchId){ toast('Batch ID를 입력하세요'); state.step=0; render(); return; }
+  if(!matRows().some(r=>r.lotId&&r.kg>0)){ toast('Material Sheet에서 Lot을 선택하세요'); state.step=0; render(); return; }
+  if(!(b.done.author&&b.done.author.n)){ toast('작성자 서명을 선택하세요'); return; }
+  const dup=state.batches.find(x=>x.id!==b.id&&x.status==='완료'&&x.mat&&x.mat.batchId===b.mat.batchId); if(dup){ toast('같은 Batch ID로 완료된 배치가 이미 있습니다'); return; }
+  const rm=remMap(b.id); const over=matRows().filter(r=>{ const l=state.lots.find(x=>x.id===r.lotId); return l&&r.kg>lotRem(l,rm)+0.01; });
+  const miss=STEPS.slice(0,7).filter((s,i)=>{ const [a,t]=stepProg(i); return a<t; });
+  let msg=`${b.mat.batchId} 작성을 완료할까요?\n\n재고 현황 시스템에 ${fmt(matTotal())} kg ISO 충전이 등록됩니다.`;
+  if(miss.length) msg+=`\n\n⚠ 미입력 단계: ${miss.join(', ')}`; if(!matPass()) msg+=`\n⚠ Material 합계 Fail`; if(over.length) msg+=`\n⚠ 현재고 초과 Lot: ${over.map(r=>r.sourceLot).join(', ')}`;
+  if(!confirm(msg)) return;
+  let spMode=cfgSpReady()?'sp':'download';
+  if(spMode==='sp'){ try{ await msToken(); }catch(e){ if(!confirm('Microsoft 로그인 실패: '+(e.message||e)+'\n\nSharePoint 저장 없이 완료하고 PDF는 다운로드할까요?')) return; spMode='download'; } }
+  busy(true,'재고 현황 시스템에 등록 중…');
+  try{
+    if(!b.done.invIsoId){ const r=await registerInventory(); b.done.invIsoId=r.isoId; b.done.invUsageIds=r.uids; }
+    b.status='완료'; b.done.at=nowLocal(); b.done.by=who(); await saveNow();
+    busy(false); render();
+    await makePdf(spMode);
+  }catch(e){ busy(false); console.error(e); toast('완료 처리 실패: '+(e.code||e.message),5000); }
+}
+async function reopen(){
+  const b=cur; const iso=state.isos.find(i=>i.id===b.done.invIsoId);
+  if(iso&&iso.status!=='대기'){ toast('ISO 탱크가 이미 출하 처리되어 되돌릴 수 없습니다. 재고 현황 시스템에서 먼저 처리하세요.',5000); return; }
+  if(!confirm('완료를 취소하고 재고 현황 시스템의 ISO 충전 기록과 ISO 탱크(대기)를 삭제할까요?\n(SharePoint에 저장된 PDF는 그대로 남습니다)')) return;
+  busy(true,'되돌리는 중…');
+  try{ const ids=b.done.invUsageIds||state.usage.filter(u=>u.batchSheetId===b.id).map(u=>u.id);
+    if(fb){ const bt=fb.writeBatch(fb.db); ids.forEach(id=>bt.delete(fb.doc(fb.db,COL.usage,id))); if(b.done.invIsoId) bt.delete(fb.doc(fb.db,COL.isos,b.done.invIsoId)); await bt.commit();
+      try{ const h={id:uid('h'),tsMs:Date.now(),ts:new Date().toISOString(),user:who(),userName:currentUser?.displayName||'',action:'ISO 삭제',kind:'del',col:COL.isos,docId:b.done.invIsoId||'',product:(invProd(PK())||{}).key||'',summary:`Batch Sheet ${b.mat.batchId} 완료 취소 · ISO 충전 ${ids.length}건 삭제(IBC 복원)`,changes:[]}; await fb.setDoc(fb.doc(fb.db,COL.hist,h.id),h); }catch(e){} }
+    else { state.usage=state.usage.filter(u=>!ids.includes(u.id)); state.isos=state.isos.filter(i=>i.id!==b.done.invIsoId); }
+    b.status='작성중'; b.done={author:b.done.author,pdfName:b.done.pdfName||'',spUrl:b.done.spUrl||''}; b.reopenedAt=new Date().toISOString(); b.reopenedBy=who();
+    await saveNow(); toast('완료가 취소되었습니다'); }
+  catch(e){ toast('실패: '+(e.code||e.message)); }
+  busy(false); render();
+}
+
+/* ---------------- PDF ---------------- */
+const P_SIG=v=>v&&v.n?`<div class="sg">${esc(v.n)}<br>${esc(dt(v.t).slice(5))}</div>`:'';
+const P_V=v=>v?'<span class="v">V</span>':'';
+const P_T=v=>esc(dt(v));
+function pdfHeader(title,b){ const pd=PROD[b.mat.product]||PROD.HF;
+  return `<div class="hdr"><h1 style="display:flex;align-items:center;justify-content:center">${title}</h1>
+  <table class="appr"><tr><th>작성</th><th>승인</th></tr><tr><td>${P_SIG(b.done.author)}</td><td></td></tr></table></div>`; }
+function pdfInfo(b){ const pd=PROD[b.mat.product]||PROD.HF;
+  return `<table><tr><th>Type</th><th>Material No.</th><th>Customer</th><th>Filling Room</th><th>Batch Code</th><th>QTY: Kg</th><th>Date</th></tr>
+  <tr><td class="c">${esc(b.mat.product)}</td><td class="c">${pd.un}</td><td class="c">${esc(b.mat.customer)}</td><td class="c">${pd.room}</td><td class="c"><b>${esc(b.mat.batchId)}</b></td><td class="c">${fmt(pd.target)}</td><td class="c">${esc(b.mat.mfgDate)}</td></tr></table>`; }
+const pfoot=(b,n,t)=>`<div class="foot"><span>JNF AM LLC · Batch Sheet R2 · ${esc(b.mat.batchId)}</span><span>${n} / ${t}</span></div>`;
+function pdfPages(b){ ensure(b); const pd=PROD[b.mat.product]||PROD.HF, w=weigh(b), rows=matRows(b), tot=matTotal(b), pass=matPass(b), seq=ibcSeq(b), V=pd.v;
+  const tr=(ps,pe)=>`<table><tr><th style="width:40%">공정 시작 날짜 및 시간</th><td>${P_T(ps)}</td><th style="width:18%">종료</th><td>${P_T(pe)}</td></tr></table>`;
+  const ws=b.ppe.workers;
+  const pages=[];
+  /* P1 Material Sheet */
+  pages.push(`${pdfHeader('Material Sheet',b)}
+  <table><tr><th style="width:26%">MFG START DATE</th><td>${esc(b.mat.mfgDate)}</td><th>ISO Tank</th><td>${esc([b.mat.isoTank,b.mat.isoTank2].filter(Boolean).join(' / '))}</td></tr>
+  <tr><th>Batch ID</th><td><b>${esc(b.mat.batchId)}</b></td><th>TARGET AMOUNT(Kg)</th><td>${fmt(pd.target)}</td></tr>
+  <tr><th>Product</th><td>${esc(b.mat.product)} (UN ${pd.un})</td><th>Required IBC or Pallet</th><td>${esc(pd.req)}</td></tr>
+  <tr><th>Customer</th><td colspan="3">${esc(b.mat.customer)}</td></tr></table>
+  <h2>ISO Tank's weighing Check (단위 : lb)</h2>
+  <table><tr><th>Weigh-In (lb)</th><th>Weigh-Out (lb)</th><th>前 customer Loading (lb)</th><th>(kg)</th><th>판정</th></tr>
+  <tr><td class="c">${w?fmt(b.mat.weighIn):''}</td><td class="c">${w?fmt(b.mat.weighOut):''}</td><td class="c">${w?fmt(w.bal):''}</td><td class="c">${w?fmt(w.kg):''}</td><td class="${w&&w.safe?'pass':'fail'}">${w?(w.safe?'안전 투입 가능':'위험 투입 검토 필요'):''}</td></tr></table>
+  <h2>1. Material Check Sheet</h2>
+  <table><tr><th>Code Name</th><th>UN #</th><th>JNF Lot # or Supplier Lot#</th><th>${pd.drum?'Drum':'IBC'} amount</th><th>실제 ${pd.drum?'Drum':'IBC'} 무게(kg)</th><th>실제 사용량(kg)</th></tr>
+  ${rows.map(r=>`<tr><td class="c">${esc(b.mat.product)}</td><td class="c">${pd.un}</td><td class="c">${esc(r.sourceLot)}</td><td class="c">${r.cnt}</td><td class="c">${fmt(r.unit)}</td><td class="r">${fmt(r.kg)}</td></tr>`).join('')}
+  <tr><th colspan="3">합계</th><td class="c"><b>${rows.reduce((s,r)=>s+r.cnt,0)}</b></td><td></td><td class="r"><b>${fmt(tot)}</b></td></tr>
+  <tr><th colspan="5">확인 (${fmt(state.cfg.passMin)} ~ ${fmt(state.cfg.passMax)} kg)</th><td class="${pass?'pass':'fail'}">${pass?'Pass':'Fail'}</td></tr></table>
+  <div style="font-size:10px">※ 투입시 최대 ${fmt(state.cfg.maxKg/1000)} Ton 넘지 말것 · 재고 현황 시스템 Lot 연동</div>`);
+  /* P2 Batch Sheet: PPE + RM & ISO */
+  pages.push(`${pdfHeader('Batch Sheet',b)}${pdfInfo(b)}
+  <h2>(1) PPE check — 안전보호구 착용확인 (성명 기입 후 "V" 체크)</h2>
+  <table><tr><th style="width:28%">Date</th>${ws.map(x=>`<td class="c">${x.name&&x.name.n?esc(x.date):''}</td>`).join('')}</tr>
+  <tr><th>Shift Group / Day or Night</th>${ws.map(x=>`<td class="c">${x.name&&x.name.n?esc([x.shift,x.dn].filter(Boolean).join(' / ')):''}</td>`).join('')}</tr>
+  <tr><th>작업자 성명</th>${ws.map(x=>`<td class="c"><b>${esc(x.name&&x.name.n||'')}</b></td>`).join('')}</tr>
+  ${PPE_ITEMS.map(([k,l])=>`<tr><th>${l}</th>${ws.map(x=>`<td class="c">${x.name&&x.name.n?P_V(x.items[k]):''}</td>`).join('')}</tr>`).join('')}</table>
+  <h2>(2) 투입 전 RM & ISO TANK Matching check</h2>${tr(b.s2.start,b.s2.end)}
+  <table><tr><th colspan="2">항목</th><th>작업 지도값</th><th>Check</th><th>확인자 서명</th></tr>
+  <tr><th rowspan="4">ISO Tank</th><td>ISO Tank UN#</td><td class="c">${pd.un}</td><td class="c">${P_V(b.s2.chk.isoUn)}</td><td rowspan="4">${P_SIG(b.s2.sig)}</td></tr>
+  <tr><td>ISO Tank #</td><td class="c">${esc([b.mat.isoTank,b.mat.isoTank2].filter(Boolean).join(' / '))}</td><td class="c">${P_V(b.s2.chk.isoNo)}</td></tr>
+  <tr><td>Name</td><td class="c">${esc(pd.name)}</td><td class="c">${P_V(b.s2.chk.isoName)}</td></tr>
+  <tr><td>Weighbridge check<br><span style="font-size:9px">RM input is allowed only when marked as 'Pass'</span></td><td class="c">In ${w?fmt(b.mat.weighIn):''} / Out ${w?fmt(b.mat.weighOut):''}<br>Balance ${w?fmt(w.bal):''} lb <span class="${w&&w.pass?'pass':'fail'}">${w?(w.pass?'Pass':'Fail'):''}</span></td><td class="c">${P_V(b.s2.chk.weigh)}</td></tr>
+  <tr><th rowspan="3">Filling Room</th><td>CDS UN #</td><td class="c">${pd.un}</td><td class="c">${P_V(b.s2.chk.cdsUn)}</td><td rowspan="3"></td></tr>
+  <tr><td>Name</td><td class="c">${esc(pd.name)}</td><td class="c">${P_V(b.s2.chk.cdsName)}</td></tr>
+  <tr><td>V-105 Pressure check (Iso tank Empty 확인)</td><td></td><td class="c">${P_V(b.s2.chk.v105)}</td></tr>
+  ${QC_ITEMS.map((q,i)=>`<tr>${i===0?'<th rowspan="4">Quick Connector</th>':''}<td colspan="2">${esc(q)}</td><td class="c">${P_V(b.s2.qc[i].chk)}</td><td>${P_SIG(b.s2.qc[i].sig)}</td></tr>`).join('')}</table>`);
+  /* P3 Facility + 원료 투입 전 확인 */
+  const okc=v=>v==='OK'?'<span class="pass">OK</span>':v==='NO'?'<span class="fail">NO</span>':'';
+  pages.push(`${pdfHeader('Batch Sheet',b)}${pdfInfo(b)}
+  <h2>(3) Facility & Equipment Check</h2>
+  <div style="font-size:10px;margin-bottom:4px">1. 원료 투입 전 설비·장치 가동 상태 확인 2. Scrubber 가동 상태 확인 3. Compressor 압력과 가동 상태 확인 4. ISO Tank Quick connect 연결 확인</div>
+  ${tr(b.s3.start,b.s3.end)}
+  <table><tr><th colspan="2">항목</th><th>작업 지도값</th><th>결과</th><th>확인자 서명</th></tr>
+  <tr><th rowspan="3">Pump</th><td>(1) 작동 확인</td><td class="c">OK / NO</td><td class="c">${okc(b.s3.pump)}</td><td rowspan="2">${P_SIG(b.s3.pumpSig)}</td></tr>
+  <tr><td>(2) Air 가압 압력</td><td class="c">&gt; 0.4 MPa</td><td class="c">${esc(b.s3.airP)}${b.s3.airP!==''?' MPa':''}</td></tr>
+  <tr><td>이상발생 시 조치된 사항</td><td colspan="3">${esc(b.s3.pumpAct)}</td></tr>
+  <tr><th rowspan="3">Utility</th><td>(1) Scrubber 가동 확인</td><td class="c">OK / NO</td><td class="c">${okc(b.s3.scrubber)}</td><td rowspan="2">${P_SIG(b.s3.scrubberSig)}</td></tr>
+  <tr><td>(2) Compressor 가동 확인</td><td class="c">&gt; 0.5 MPa</td><td class="c">${okc(b.s3.compressor)} ${esc(b.s3.compP)}${b.s3.compP!==''?' MPa':''}</td></tr>
+  <tr><td>이상발생 시 조치된 사항</td><td colspan="3">${esc(b.s3.utilAct)}</td></tr>
+  <tr><th rowspan="2">Ventilation</th><td>Ventilation valve Open</td><td colspan="2" class="c">${b.s3.vents.map((v,i)=>`${i+1}: ${v?'<span class="v">V</span>':'—'}`).join(' &nbsp; ')}</td><td>${P_SIG(b.s3.ventSig)}</td></tr>
+  <tr><td>이상발생 시 조치된 사항</td><td colspan="3">${esc(b.s3.ventAct)}</td></tr></table>
+  <h2>(4) 원료 투입 전 확인</h2>
+  <div style="font-size:10px;margin-bottom:4px">1. 투입 원재료를 반드시 확인 한다. HF/HNO3/HCl 2. 투입할 원재료를 Filling Room 앞에 대기 시킨 후 실제 투입할 양과 원재료를 다시 확인 한다.</div>
+  ${tr(b.s4.start,b.s4.end)}
+  <table><tr><th>공정 구분</th><th>UN #</th><th>원재료명</th><th>JNFAM No.</th><th>Supplier Lot#</th><th>준비량(kg)</th><th>확인 (V Check)</th></tr>
+  ${rows.map((r,j)=>`<tr><td class="c">Raw Materials</td><td class="c">${pd.un}</td><td class="c">${esc(pd.name)}</td><td class="c">${esc(b.mat.batchId)}</td><td class="c">${esc(r.sourceLot)}</td><td class="r">${fmt(r.kg)}</td><td class="c">${P_V(b.s4.chk[j])}</td></tr>`).join('')}
+  <tr><th colspan="5">합계</th><td class="r"><b>${fmt(tot)}</b></td><td></td></tr></table>`);
+  /* P4 Valve check + IBC 순서 */
+  const half=Math.ceil(seq.length/2), useTwo=seq.length>22;
+  const seqTbl=(arr,off)=>`<table><tr><th>순번</th><th>UN #</th><th>Batch ID (Lot #)</th><th>kg</th><th>Check</th></tr>${arr.map((r,j)=>`<tr><td class="c">${j+1+off}</td><td class="c">${pd.un}</td><td class="c">${esc(r.lot)}</td><td class="r">${fmt(r.kg)}</td><td class="c">${P_V(b.s5.ibcChk[j+off])}</td></tr>`).join('')}</table>`;
+  const dkg=seq.reduce((s,r,j)=>s+(b.s5.ibcChk[j]?r.kg:0),0);
+  pages.push(`${pdfHeader('Batch Sheet',b)}${pdfInfo(b)}
+  <h2>(5) 원료 투입 전 Valve check</h2>
+  <div style="font-size:10px;margin-bottom:4px">1. 투입전 ISO Tank와 CDS Quick Connect 연결 2. ISO Tank Ventilation 연결</div>
+  ${tr(b.s5.start,b.s5.end)}
+  <table><tr><th>Open Valve</th><th>V</th><th>Close Valve</th><th>V</th><th>확인자 서명</th></tr>
+  ${VALVE_OPEN.map((v,i)=>`<tr><td class="c">${V}-${v}</td><td class="c">${P_V(b.s5.open[v])}</td><td class="c">${VALVE_CLOSE[i]?`${V}-${VALVE_CLOSE[i]}`:''}</td><td class="c">${VALVE_CLOSE[i]?P_V(b.s5.close[VALVE_CLOSE[i]]):''}</td>${i===0?`<td rowspan="${VALVE_OPEN.length}">${P_SIG(b.s5.sig)}</td>`:''}</tr>`).join('')}
+  <tr><th>이상발생 시 조치된 사항</th><td colspan="4">${esc(b.s5.act)}</td></tr></table>
+  <h2>원료 확인 — 투입 원재료 확인</h2>${tr(b.s5.start2,b.s5.end2)}
+  ${useTwo?`<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${seqTbl(seq.slice(0,half),0)}${seqTbl(seq.slice(half),half)}</div>`:seqTbl(seq,0)}
+  <table><tr><th>투입 합계 (Check)</th><td class="r"><b>${fmt(dkg)} kg</b></td><th>이상발생 시 조치된 사항</th><td>${esc(b.s5.ibcAct)}</td></tr></table>`);
+  /* P5 Air flushing */
+  const a=num(b.s6.airP);
+  pages.push(`${pdfHeader('Batch Sheet',b)}${pdfInfo(b)}
+  <h2>(6) 투입 완료 후 Air Flushing</h2>
+  <div style="font-size:10px;margin-bottom:4px">1. 투입 완료 후 Air flushing 2. ISO Tank Ventilation 연결</div>
+  ${tr(b.s6.start,b.s6.end)}
+  <table><tr><th>항목</th><th>작업 지도값</th><th>결과</th><th>확인자 서명</th></tr>
+  <tr><td>Control valve</td><td class="c">${V}-09</td><td class="c">${P_V(b.s6.ctrl)}</td><td rowspan="3">${P_SIG(b.s6.sig1)}</td></tr>
+  <tr><td>Air 압력 확인</td><td class="c">0.4~0.5 Bar</td><td class="c">${esc(b.s6.airP)}${a!=null?' bar':''}</td></tr>
+  <tr><td>ISO Tank pressure</td><td></td><td class="c">${esc(b.s6.isoP)}</td></tr></table>
+  <table><tr><th>Open Valve</th><th>V</th><th>Close Valve</th><th>V</th><th>확인자 서명</th></tr>
+  ${AF_OPEN.map((v,i)=>`<tr><td class="c">${V}-${v}</td><td class="c">${P_V(b.s6.open[v])}</td><td class="c">${AF_CLOSE[i]?`${V}-${AF_CLOSE[i]}`:''}</td><td class="c">${AF_CLOSE[i]?P_V(b.s6.close[AF_CLOSE[i]]):''}</td>${i===0?`<td rowspan="${AF_OPEN.length}">${P_SIG(b.s6.sig)}</td>`:''}</tr>`).join('')}
+  <tr><th>이상발생 시 조치된 사항</th><td colspan="4">${esc(b.s6.act)}</td></tr></table>
+  <h2>작성 완료</h2>
+  <table><tr><th>작성자</th><td>${esc(b.done.author&&b.done.author.n||'')}</td><th>작성 일시</th><td>${esc(dt(b.done.at||''))}</td></tr>
+  <tr><th>재고 등록</th><td colspan="3">${b.done.invIsoId?`재고 현황 시스템 ISO 충전 등록 · ${fmt(tot)} kg · ISO ${esc(b.mat.isoTank)}`:'미등록'}</td></tr>
+  <tr><th>기록 계정</th><td colspan="3">${esc(b.done.by||b.updatedBy||'')}</td></tr></table>`);
+  return pages.map((h,i)=>`<div class="pg">${h}${pfoot(b,i+1,pages.length)}</div>`).join('');
+}
+async function buildPdf(b){
+  const area=$('printArea'); area.innerHTML=pdfPages(b);
+  const { jsPDF }=window.jspdf; const doc=new jsPDF({unit:'mm',format:'a4',orientation:'portrait',compress:true});
+  const pgs=[...area.querySelectorAll('.pg')];
+  for(let i=0;i<pgs.length;i++){
+    const cv=await html2canvas(pgs[i],{scale:2,backgroundColor:'#fff',useCORS:true,logging:false});
+    const pageHpx=Math.round(cv.width*297/210);
+    for(let y=0,k=0;y<cv.height-5;y+=pageHpx,k++){
+      const h=Math.min(pageHpx,cv.height-y); const c=document.createElement('canvas'); c.width=cv.width; c.height=h; c.getContext('2d').drawImage(cv,0,y,cv.width,h,0,0,cv.width,h);
+      if(i>0||k>0) doc.addPage(); doc.addImage(c.toDataURL('image/jpeg',0.9),'JPEG',0,0,210,h*210/cv.width);
+    }
+  }
+  area.innerHTML='';
+  return doc.output('blob');
+}
+const pdfName=b=>`BatchSheet_${(b.mat.batchId||'NOID').replace(/[^\w\-]/g,'_')}_${b.mat.mfgDate||today()}.pdf`;
+function downloadBlob(blob,name){ const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},2000); }
+async function makePdf(mode){
+  const b=cur; const name=pdfName(b);
+  if(mode==='sp'){ try{ await msToken(); }catch(e){ toast('Microsoft 로그인 실패: '+(e.message||e),5000); if(!confirm('Microsoft 로그인에 실패했습니다. PDF를 이 기기에 다운로드할까요?')) return; mode='download'; } }
+  busy(true,'PDF 생성 중…');
+  try{
+    const blob=await buildPdf(b);
+    if(mode==='preview'){ busy(false); const u=URL.createObjectURL(blob); const w=window.open(u,'_blank'); if(!w) downloadBlob(blob,name); return; }
+    if(mode==='download'){ busy(false); downloadBlob(blob,name); b.done.pdfName=name; await saveNow(); render(); return; }
+    busy(true,'SharePoint에 업로드 중…');
+    const item=await spUpload(blob,name);
+    b.done.pdfName=name; b.done.spUrl=item.webUrl||''; b.done.spAt=new Date().toISOString(); await saveNow();
+    busy(false); toast('SharePoint Batch Sheet 폴더에 저장되었습니다',4000); render();
+  }catch(e){ busy(false); console.error(e);
+    if(mode==='sp'){ if(confirm('SharePoint 저장 실패: '+(e.message||e)+'\n\nPDF를 이 기기에 다운로드할까요? (나중에 완료 화면에서 다시 저장할 수 있습니다)')){ try{ downloadBlob(await buildPdf(b),name); }catch(_){} } }
+    else toast('PDF 생성 실패: '+(e.message||e),5000); }
+}
+
+/* ---------------- Microsoft Graph (SharePoint) ---------------- */
+let msalApp=null;
+const cfgSpReady=()=>{ const ms=state.cfg.ms||{}; return !!(ms.clientId&&ms.shareUrl); };
+function getMsal(){ const ms=state.cfg.ms||{}; if(!ms.clientId) throw new Error('설정 탭에서 Microsoft Client ID를 입력하세요');
+  if(!window.msal) throw new Error('MSAL 라이브러리를 불러오지 못했습니다');
+  if(!msalApp||msalApp._cid!==ms.clientId){ msalApp=new msal.PublicClientApplication({auth:{clientId:ms.clientId,authority:'https://login.microsoftonline.com/'+(ms.tenantId||'organizations'),redirectUri:location.origin+location.pathname},cache:{cacheLocation:'localStorage'}}); msalApp._cid=ms.clientId; }
+  return msalApp; }
+function msAccount(){ try{ const a=msalApp||(state.cfg.ms&&state.cfg.ms.clientId?getMsal():null); const acc=a&&a.getAllAccounts()[0]; return acc?acc.username:''; }catch(e){ return ''; } }
+const SCOPES=['Files.ReadWrite.All'];
+/* 팝업 차단을 피하려고 initialize는 미리 해두고, 로그인 팝업은 버튼 탭 직후 첫 await에서 연다 */
+let msalInitP=null;
+function msalInit(){ try{ const a=getMsal(); if(!msalInitP||msalInitP._a!==a){ msalInitP=a.initialize?a.initialize():Promise.resolve(); msalInitP._a=a; } return msalInitP; }catch(e){ return Promise.resolve(); } }
+async function msToken(){ const a=getMsal(); const acc=a.getAllAccounts()[0];
+  if(acc){ try{ return (await a.acquireTokenSilent({scopes:SCOPES,account:acc})).accessToken; }catch(e){} }
+  const r=await a.acquireTokenPopup({scopes:SCOPES,account:acc,prompt:acc?undefined:'select_account'}); return r.accessToken; }
+async function graph(tk,url,opt={}){ const r=await fetch(url.startsWith('http')?url:'https://graph.microsoft.com/v1.0'+url,{...opt,headers:{Authorization:'Bearer '+tk,...(opt.headers||{})}});
+  if(!r.ok){ let m=r.status+''; try{ const j=await r.json(); m+=' '+(j.error&&(j.error.code+': '+j.error.message)||''); }catch(e){} throw new Error('Graph '+m); } return r.status===204?{}:r.json(); }
+function shareId(u){ const b=btoa(unescape(encodeURIComponent(u))).replace(/=+$/,'').replace(/\//g,'_').replace(/\+/g,'-'); return 'u!'+b; }
+async function spResolve(tk){ const ms=state.cfg.ms;
+  const it=await graph(tk,`/shares/${shareId(ms.shareUrl.trim())}/driveItem`,{headers:{Prefer:'redeemSharingLink'}});
+  if(!it.folder) throw new Error('공유 링크가 폴더가 아닙니다');
+  ms.driveId=it.parentReference.driveId; ms.itemId=it.id; ms.folderName=it.name; ms.folderUrl=it.webUrl; await saveCfg(); return ms; }
+async function spUpload(blob,name){
+  const tk=await msToken(); let ms=state.cfg.ms; if(!ms.itemId||!ms.driveId) ms=await spResolve(tk);
+  const path=`/drives/${ms.driveId}/items/${ms.itemId}:/${encodeURIComponent(name)}:`;
+  if(blob.size<3.8*1024*1024) return graph(tk,path+'/content?@microsoft.graph.conflictBehavior=replace',{method:'PUT',headers:{'Content-Type':'application/pdf'},body:blob});
+  const s=await graph(tk,path+'/createUploadSession',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item:{'@microsoft.graph.conflictBehavior':'replace'}})});
+  const CH=320*1024*10; let res;
+  for(let i=0;i<blob.size;i+=CH){ const end=Math.min(i+CH,blob.size); const r=await fetch(s.uploadUrl,{method:'PUT',headers:{'Content-Range':`bytes ${i}-${end-1}/${blob.size}`},body:blob.slice(i,end)}); if(!r.ok&&r.status!==202) throw new Error('업로드 실패 '+r.status); res=await r.json(); }
+  return res;
+}
+
+/* ---------------- Firebase ---------------- */
+async function connectFirebase(){
+  if(DEMO){ loadDemo(); return; }
+  try{ const [appM,fsM,auM]=await Promise.all([import(FB_URL+'firebase-app.js'),import(FB_URL+'firebase-firestore.js'),import(FB_URL+'firebase-auth.js')]);
+    const fapp=appM.initializeApp(FB_CFG); const db=fsM.getFirestore(fapp); AUM=auM; auth=auM.getAuth(fapp);
+    auM.onAuthStateChanged(auth,user=>{ currentUser=user; if(user){ $('loginGate').style.display='none'; startListeners(fsM,db); } else { stopListeners(); fb=null; setConn('off','로그인 필요'); $('loginGate').style.display='flex'; } });
+  }catch(e){ setConn('err','Firebase 연결 실패'); toast('Firebase 연결 실패: '+e.message); }
+}
+function stopListeners(){ unsubs.forEach(u=>{try{u();}catch(e){}}); unsubs=[]; }
+function startListeners(fsM,db){
+  stopListeners(); fb={db,doc:fsM.doc,setDoc:fsM.setDoc,writeBatch:fsM.writeBatch};
+  const pend=new Set(['batches','products','lots','usage','isos']); setConn('wait','불러오는 중…');
+  const done=k=>{ pend.delete(k); if(!pend.size&&!state.loaded){ state.loaded=true; setConn('ok',esc(who())); render(); } };
+  const onErr=k=>err=>{ console.warn(k,err); if(err.code==='permission-denied'){ setConn('err','권한 없음'); $('loginGate').style.display='flex'; $('loginMsg').textContent=`이 계정(${who()})은 ${k==='batches'?'batch_sheets':'inv_*'} 접근 권한이 없습니다.\nFirestore 보안 규칙에 batch_sheets / batch_config 추가가 필요합니다.`; } else toast('Firestore 오류: '+err.code); };
+  [['products',COL.products],['lots',COL.lots],['usage',COL.usage],['isos',COL.isos],['batches',COL.batch]].forEach(([k,c])=>{
+    unsubs.push(fsM.onSnapshot(fsM.collection(db,c),snap=>{ state[k]=snap.docs.map(d=>({id:d.id,...d.data()}));
+      if(k==='batches'&&cur){ const s=state[k].find(x=>x.id===cur.id); if(s&&s.status==='완료'&&cur.status!=='완료'){ cur=ensure(s); } }
+      done(k); if(state.loaded&&!(document.activeElement&&document.activeElement.dataset&&document.activeElement.dataset.k)) render(); },onErr(k)));
+  });
+  unsubs.push(fsM.onSnapshot(fsM.doc(db,COL.cfg,'main'),s=>{ if(s.exists()){ const d=s.data(); state.cfg={...JSON.parse(JSON.stringify(DEF_CFG)),...d,ms:{...DEF_CFG.ms,...(d.ms||{})}}; } if(state.cfg.ms.clientId) msalInit(); if(state.view==='settings'||state.loaded) render(); },err=>console.warn('cfg',err)));
+}
+async function googleLogin(){ try{ const p=new AUM.GoogleAuthProvider(); p.setCustomParameters({prompt:'select_account'}); await AUM.signInWithPopup(auth,p); }catch(e){ if(!/popup-closed|cancelled/.test(e.code||'')) $('loginMsg').textContent='로그인 실패: '+(e.code||e.message); } }
+
+/* DEMO: 재고 현황 시스템 초기(엑셀 이관) 데이터 중 현재고가 남은 Lot — 실제 Firestore와 다를 수 있음 */
+const DEMO_SEED={"products":[{"key":"HF","name":"HF 49%","code":"1790","lotPrefix":"JAHF","ibcKg":1150},{"key":"HNO3_65","name":"HNO3 65%","code":"2031","lotPrefix":"JAHN","ibcKg":1240},{"key":"HCL","name":"HCl 35%","code":"1789","lotPrefix":"JAHC","ibcKg":1100},{"key":"HNO3_68","name":"HNO3 68%","code":"2032","lotPrefix":"JAHN","ibcKg":1240}],"lots":[{"id":"L00146","product":"HF","sourceLot":"FT2662306","receivedDate":"2026-08-07","container":"IBC","unitKg":1150,"qtyIn":1150.0,"hold":false},{"id":"L00151","product":"HF","sourceLot":"FT2662404","receivedDate":"2026-08-10","container":"IBC","unitKg":1150,"qtyIn":6900.0,"hold":false},{"id":"L00153","product":"HF","sourceLot":"FT2662301","receivedDate":"2026-08-11","container":"IBC","unitKg":1150,"qtyIn":6900.0,"hold":false},{"id":"L00155","product":"HF","sourceLot":"FT2662302","receivedDate":"2026-08-11","container":"IBC","unitKg":1150,"qtyIn":2300.0,"hold":false},{"id":"L00157","product":"HF","sourceLot":"FT2662309","receivedDate":"2026-08-12","container":"IBC","unitKg":1150,"qtyIn":20700.0,"hold":false},{"id":"L00158","product":"HF","sourceLot":"FT2662310","receivedDate":"2026-08-12","container":"IBC","unitKg":1150,"qtyIn":20700.0,"hold":false},{"id":"L00159","product":"HF","sourceLot":"FT2662407","receivedDate":"2026-08-20","container":"IBC","unitKg":1150,"qtyIn":20700.0,"hold":false},{"id":"L00160","product":"HF","sourceLot":"FT2662408","receivedDate":"2026-08-20","container":"IBC","unitKg":1150,"qtyIn":2300.0,"hold":false},{"id":"L00162","product":"HF","sourceLot":"FT2672103","receivedDate":"2026-08-26","container":"IBC","unitKg":1150,"qtyIn":20700.0,"hold":false},{"id":"L00163","product":"HF","sourceLot":"FT2672104","receivedDate":"2026-08-26","container":"IBC","unitKg":1150,"qtyIn":20700.0,"hold":false},{"id":"L00164","product":"HF","sourceLot":"FT2672401","receivedDate":"2026-08-31","container":"IBC","unitKg":1150,"qtyIn":20700.0,"hold":false},{"id":"L00165","product":"HF","sourceLot":"FT2672402","receivedDate":"2026-08-31","container":"IBC","unitKg":1150,"qtyIn":20700.0,"hold":false},{"id":"L00166","product":"HF","sourceLot":"FT2672105","receivedDate":"2026-09-02","container":"IBC","unitKg":1150,"qtyIn":20700.0,"hold":false},{"id":"L00167","product":"HF","sourceLot":"FT2672106","receivedDate":"2026-09-02","container":"IBC","unitKg":1150,"qtyIn":20700.0,"hold":false},{"id":"L00168","product":"HF","sourceLot":"FT2672310","receivedDate":"2026-09-16","container":"IBC","unitKg":1150,"qtyIn":20700.0,"hold":false},{"id":"L00169","product":"HF","sourceLot":"FT2672311","receivedDate":"2026-09-16","container":"IBC","unitKg":1150,"qtyIn":20700.0,"hold":false},{"id":"L00170","product":"HF","sourceLot":"FT2672312","receivedDate":"2026-09-17","container":"IBC","unitKg":1150,"qtyIn":20700.0,"hold":false},{"id":"L00171","product":"HF","sourceLot":"FT2672413","receivedDate":"2026-09-17","container":"IBC","unitKg":1150,"qtyIn":20700.0,"hold":false},{"id":"L00195","product":"HNO3_65","sourceLot":"NT259101","receivedDate":"2025-11-04","container":"IBC","unitKg":1240,"qtyIn":9920.0,"hold":true},{"id":"L00196","product":"HNO3_65","sourceLot":"NT259102","receivedDate":"2025-11-04","container":"IBC","unitKg":1240,"qtyIn":7440.0,"hold":true},{"id":"L00198","product":"HNO3_65","sourceLot":"NT259103","receivedDate":"2025-11-04","container":"IBC","unitKg":1240,"qtyIn":2480.0,"hold":true},{"id":"L00200","product":"HNO3_65","sourceLot":"NT259104","receivedDate":"2025-11-04","container":"IBC","unitKg":1240,"qtyIn":7440.0,"hold":true},{"id":"L00202","product":"HNO3_65","sourceLot":"NT25Z102","receivedDate":"2026-01-28","container":"IBC","unitKg":1240,"qtyIn":7440.0,"hold":true},{"id":"L00212","product":"HNO3_65","sourceLot":"NT263104","receivedDate":"2026-05-15","container":"IBC","unitKg":1240,"qtyIn":4960.0,"hold":false},{"id":"L00214","product":"HNO3_65","sourceLot":"NT264101","receivedDate":"2026-05-29","container":"IBC","unitKg":1240,"qtyIn":19840.0,"hold":false},{"id":"L00215","product":"HNO3_65","sourceLot":"NT264103","receivedDate":"2026-06-08","container":"IBC","unitKg":1240,"qtyIn":19840.0,"hold":false},{"id":"L00216","product":"HNO3_65","sourceLot":"NT265101","receivedDate":"2026-06-30","container":"IBC","unitKg":1240,"qtyIn":19840.0,"hold":false},{"id":"L00217","product":"HNO3_65","sourceLot":"NT265102","receivedDate":"2026-06-30","container":"IBC","unitKg":1240,"qtyIn":19840.0,"hold":false},{"id":"L00218","product":"HNO3_65","sourceLot":"NT265103","receivedDate":"2026-07-30","container":"IBC","unitKg":1240,"qtyIn":19840.0,"hold":false},{"id":"L00219","product":"HNO3_65","sourceLot":"NT266101","receivedDate":"2026-08-11","container":"IBC","unitKg":1240,"qtyIn":19840.0,"hold":false},{"id":"L00220","product":"HNO3_65","sourceLot":"NT266102","receivedDate":"2026-08-14","container":"IBC","unitKg":1240,"qtyIn":19840.0,"hold":false},{"id":"L00221","product":"HNO3_65","sourceLot":"NT266103","receivedDate":"2026-08-14","container":"IBC","unitKg":1240,"qtyIn":19840.0,"hold":false},{"id":"L00222","product":"HNO3_65","sourceLot":"NT267101","receivedDate":"2026-08-28","container":"IBC","unitKg":1240,"qtyIn":19840.0,"hold":false},{"id":"L00223","product":"HNO3_65","sourceLot":"NT267102","receivedDate":"2026-08-28","container":"IBC","unitKg":1240,"qtyIn":19840.0,"hold":false},{"id":"L00224","product":"HNO3_65","sourceLot":"NT267105","receivedDate":"2026-09-15","container":"IBC","unitKg":1240,"qtyIn":19840.0,"hold":false},{"id":"L00249","product":"HCL","sourceLot":"LT263201","receivedDate":"2026-04-24","container":"IBC","unitKg":1100,"qtyIn":19800.0,"hold":false},{"id":"L00250","product":"HCL","sourceLot":"LT263202","receivedDate":"2026-04-27","container":"IBC","unitKg":1100,"qtyIn":19800.0,"hold":false},{"id":"L00251","product":"HCL","sourceLot":"LT264201","receivedDate":"2026-06-13","container":"IBC","unitKg":1100,"qtyIn":19800.0,"hold":false},{"id":"L00252","product":"HCL","sourceLot":"LT264202","receivedDate":"2026-06-13","container":"IBC","unitKg":1100,"qtyIn":19800.0,"hold":false},{"id":"L00253","product":"HCL","sourceLot":"260428","receivedDate":"2026-06-22","container":"IBC","unitKg":1100,"qtyIn":19800.0,"hold":false},{"id":"L00254","product":"HCL","sourceLot":"260428","receivedDate":"2026-06-22","container":"IBC","unitKg":1100,"qtyIn":19800.0,"hold":false},{"id":"L00255","product":"HCL","sourceLot":"260428","receivedDate":"2026-06-23","container":"IBC","unitKg":1100,"qtyIn":19800.0,"hold":false},{"id":"L00256","product":"HCL","sourceLot":"LT265202","receivedDate":"2026-07-02","container":"IBC","unitKg":1100,"qtyIn":19800.0,"hold":false},{"id":"L00257","product":"HCL","sourceLot":"LT265203","receivedDate":"2026-07-02","container":"IBC","unitKg":1100,"qtyIn":17600.0,"hold":false},{"id":"L00259","product":"HCL","sourceLot":"LT265201","receivedDate":"2026-07-08","container":"IBC","unitKg":1100,"qtyIn":19800.0,"hold":false},{"id":"L00260","product":"HCL","sourceLot":"LT266201","receivedDate":"2026-07-29","container":"IBC","unitKg":1100,"qtyIn":19800.0,"hold":false},{"id":"L00261","product":"HCL","sourceLot":"LT266202","receivedDate":"2026-07-29","container":"IBC","unitKg":1100,"qtyIn":19800.0,"hold":false},{"id":"L00262","product":"HCL","sourceLot":"LT266203","receivedDate":"2026-07-29","container":"IBC","unitKg":1100,"qtyIn":19800.0,"hold":false},{"id":"L00263","product":"HCL","sourceLot":"260526","receivedDate":"2026-08-13","container":"IBC","unitKg":1100,"qtyIn":39600.0,"hold":false},{"id":"L00264","product":"HCL","sourceLot":"260526","receivedDate":"2026-08-20","container":"IBC","unitKg":1100,"qtyIn":39600.0,"hold":false},{"id":"L00265","product":"HCL","sourceLot":"LT267201","receivedDate":"2026-09-01","container":"IBC","unitKg":1100,"qtyIn":19800.0,"hold":false},{"id":"L00266","product":"HCL","sourceLot":"LT267202","receivedDate":"2026-09-01","container":"IBC","unitKg":1100,"qtyIn":19800.0,"hold":false},{"id":"L00267","product":"HCL","sourceLot":"LT267203","receivedDate":"2026-09-01","container":"IBC","unitKg":1100,"qtyIn":19800.0,"hold":false},{"id":"L00268","product":"HCL","sourceLot":"260701","receivedDate":"2026-09-18","container":"IBC","unitKg":1100,"qtyIn":39600.0,"hold":false},{"id":"L00269","product":"HNO3_68","sourceLot":"NT25Z101","receivedDate":"2026-01-28","container":"IBC","unitKg":1240,"qtyIn":9920.0,"hold":false},{"id":"L00271","product":"HNO3_68","sourceLot":"NT263101/2","receivedDate":"2026-04-28","container":"IBC","unitKg":1240,"qtyIn":19840.0,"hold":false},{"id":"L00272","product":"HNO3_68","sourceLot":"NT263105","receivedDate":"2026-05-15","container":"IBC","unitKg":1240,"qtyIn":19840.0,"hold":false},{"id":"L00273","product":"HNO3_68","sourceLot":"NT264102/4","receivedDate":"2026-06-16","container":"IBC","unitKg":1240,"qtyIn":19840.0,"hold":false}]};
+function loadDemo(){
+  state.products=DEMO_SEED.products; state.lots=DEMO_SEED.lots.map(l=>({...l})); state.usage=[]; state.isos=[]; state.batches=[];
+  state.cfg.workers=['작업자 A','작업자 B','작업자 C']; state.loaded=true;
+  setConn('err','DEMO 모드 · 샘플 재고 (저장 안 됨)');
+  $('demoBar').style.display='block'; render();
+}
+
+/* ---------------- app API ---------------- */
+window.app={
+  go(v){ if(cur) saveNow(); state.view=v; if(v!=='edit') cur=null; window.scrollTo(0,0); render(); },
+  step(i){ state.step=Math.max(0,Math.min(7,i)); window.scrollTo(0,0); render(); },
+  listF(f){ state.listF=f; render(); },
+  newBatch(){ cur=newBatch(); cur.mat.batchId=nextBatchId(cur.mat.product,cur.mat.mfgDate); cur.mat.lots=autoAlloc(cur.mat.product).rows; state.view='edit'; state.step=0; saveNow(); window.scrollTo(0,0); render(); },
+  open(id){ const b=state.batches.find(x=>x.id===id); if(!b) return; cur=ensure(JSON.parse(JSON.stringify(b))); state.view='edit'; state.step=cur.status==='완료'?7:0; window.scrollTo(0,0); render(); },
+  setProd(k){ if(locked()) return; const old=cur.mat.product; if(old===k) return;
+    if(cur.mat.lots.some(r=>r.lotId)&&!confirm('품목을 바꾸면 선택한 Lot이 현재고 기준으로 다시 배정됩니다. 계속할까요?')) return;
+    cur.mat.product=k; cur.mat.isoTank=PROD[k].iso; cur.mat.isoTank2=PROD[k].iso2; cur.mat.lots=autoAlloc(k).rows; cur.s4.chk={}; cur.s5.ibcChk={};
+    if(!cur.mat.batchId||/-\d{6}[A-J]$/.test(cur.mat.batchId)) cur.mat.batchId=nextBatchId(k,cur.mat.mfgDate); touch(); render(); },
+  genId(){ cur.mat.batchId=nextBatchId(PK(),cur.mat.mfgDate); touch(); render(); },
+  alloc(){ if(locked()) return; if(cur.mat.lots.some(r=>r.lotId)&&!confirm('입력한 Lot을 지우고 현재고 선입선출로 다시 배정할까요?')) return;
+    const r=autoAlloc(PK()); cur.mat.lots=r.rows; cur.s4.chk={}; cur.s5.ibcChk={}; touch(); render(); if(r.short>0) toast(`현재고가 부족합니다 — ${r.short} ${PD().drum?'Drum':'IBC'} 모자람`,4000); },
+  addLot(){ cur.mat.lots.push({lotId:'',count:'',unitKg:''}); touch(); render(); },
+  delLot(i){ cur.mat.lots.splice(i,1); if(!cur.mat.lots.length) cur.mat.lots.push({lotId:'',count:'',unitKg:''}); cur.s4.chk={}; cur.s5.ibcChk={}; touch(); render(); },
+  ppeAll(i){ const w=cur.ppe.workers[i]; const all=PPE_ITEMS.every(([k])=>w.items[k]); PPE_ITEMS.forEach(([k])=>w.items[k]=!all); touch(); render(); },
+  sigSet(path,name){ name=(name||'').trim(); setP(cur,path,name?{n:name,t:nowLocal()}:null); closeModal(); touch(); render(); },
+  closeModal, complete, reopen,
+  pdf(m){ makePdf(m); },
+  async delBatch(){ if(!confirm('이 배치(작성중)를 삭제할까요?')) return; if(fb){ const fsM=await import(FB_URL+'firebase-firestore.js'); await fsM.deleteDoc(fb.doc(fb.db,COL.batch,cur.id)); } else state.batches=state.batches.filter(x=>x.id!==cur.id); cur=null; state.view='list'; render(); },
+  async saveSettings(){ const c=state.cfg; c.workers=$('cfgWorkers').value.split('\n').map(s=>s.trim()).filter(Boolean); c.customers=$('cfgCust').value.split('\n').map(s=>s.trim()).filter(Boolean);
+    c.passMin=+$('cfgMin').value||18200; c.passMax=+$('cfgMax').value||19000; c.maxKg=+$('cfgMaxKg').value||19000; c.weighDangerLb=+$('cfgDanger').value||40000; c.weighPassLb=+$('cfgWPass').value||500; await saveCfg(); render(); },
+  async saveMs(){ const ms=state.cfg.ms; const nc=$('msClient').value.trim(), nt=$('msTenant').value.trim(), ns=$('msShare').value.trim();
+    if(nc!==ms.clientId||nt!==ms.tenantId||ns!==ms.shareUrl){ ms.driveId=''; ms.itemId=''; ms.folderName=''; } ms.clientId=nc; ms.tenantId=nt; ms.shareUrl=ns;
+    try{ await msalInit(); busy(true,'Microsoft 로그인 / 폴더 확인 중…'); const tk=await msToken(); await spResolve(tk); busy(false); toast('폴더 연결 확인: '+ms.folderName,4000); }catch(e){ busy(false); try{ await saveCfg(); }catch(_){} toast('연결 실패: '+(e.message||e),6000); } render(); },
+  async msLogout(){ try{ const a=getMsal(); const acc=a.getAllAccounts()[0]; if(acc) await a.logoutPopup({account:acc}); }catch(e){} render(); },
+  googleLogin, async logout(){ if(auth) await AUM.signOut(auth); }
+};
+window.$=$;
+render(); connectFirebase();
+</script>
+</body>
+</html>
