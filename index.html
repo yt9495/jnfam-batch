@@ -203,12 +203,21 @@ function autoAlloc(k){ const pd=PROD[k]; const rm=remMap(cur&&cur.id); let left=
   return {rows:rows.length?rows:[{lotId:'',count:'',unitKg:''}],short:left}; }
 /* 현재고 요약 (용기 기준: IBC 모드는 IBC Lot, Drum 모드는 Drum Lot · HOLD 제외) */
 function curStock(k){ const pd=PROD[k]; const ls=availLots(k,[]); const rm=remMap(cur&&cur.id); const kg=ls.reduce((s,l)=>s+lotRem(l,rm),0); return {kg,ea:kg/pd.unit,n:ls.length}; }
-function nextBatchId(k,date){
-  const p=invProd(k); const pre=(p&&p.lotPrefix)||({HF:'JAHF',HNO3:'JAHN'}[k]||'JAHC'); const ymd=(date||today()).slice(2).replace(/-/g,'');
-  const used=new Set([...state.usage.map(u=>u.jnfamLot),...state.isos.map(i=>i.jnfamLot),...state.batches.filter(b=>!cur||b.id!==cur.id).map(b=>b.mat&&b.mat.batchId)].filter(Boolean));
+const lotPre=k=>{ const p=invProd(k); return (p&&p.lotPrefix)||({HF:'JAHF',HNO3:'JAHN'}[k]||'JAHC'); };
+const ymdOf=d=>(d||today()).slice(2).replace(/-/g,'');
+/* Batch ID = 생성(제조) 기준: MF_JAHF-YYMMDD + A/B/C (MFG Start Date) */
+function nextBatchId(k,date){ const pre=lotPre(k), ymd=ymdOf(date);
+  const used=new Set(state.batches.filter(b=>!cur||b.id!==cur.id).map(b=>b.mat&&b.mat.batchId).filter(Boolean));
   for(const c of 'ABCDEFGHIJ'){ const s=`MF_${pre}-${ymd}${c}`; if(!used.has(s)) return s; }
   return `MF_${pre}-${ymd}A`;
 }
+/* 제품 ID = 출하 기준(Shipping List와 동일): JAHF-YYMMDD + A/B/C (Ship Date) — 재고 현황 시스템 JNFAM Lot 규칙과 동일 */
+function nextProdId(k,date){ const pre=lotPre(k), ymd=ymdOf(date);
+  const used=new Set([...state.usage.map(u=>u.jnfamLot),...state.isos.map(i=>i.jnfamLot),...state.batches.filter(b=>!cur||b.id!==cur.id).map(b=>b.mat&&b.mat.prodId)].filter(Boolean));
+  for(const c of 'ABCDEFGHIJ'){ const s=`${pre}-${ymd}${c}`; if(!used.has(s)) return s; }
+  return `${pre}-${ymd}A`;
+}
+const autoId=v=>!v||/-\d{6}[A-J]$/.test(v);
 
 /* ISO Tank 목록 (설정에서 관리) */
 const isoList=k=>(state.cfg.isoTanks||[]).filter(t=>t&&t.no&&(!t.prod||t.prod===PROD[k].name));
@@ -221,7 +230,7 @@ function isoSel(path,none){ const k=PK(), v=getP(cur,path)||''; const l=isoList(
 function newBatch(){
   const k='HF', d=today();
   return {id:uid('bs'),status:'작성중',createdBy:who(),createdAt:new Date().toISOString(),
-    mat:{mfgDate:d,shipDate:d,product:k,batchId:'',customer:(state.cfg.customers||[])[0]||'',isoTank:defIso(k,1),isoTank2:defIso(k,2),weighIn:'',weighOut:'',lots:[{lotId:'',count:'',unitKg:''}]},
+    mat:{mfgDate:d,shipDate:d,product:k,batchId:'',prodId:'',customer:(state.cfg.customers||[])[0]||'',isoTank:defIso(k,1),isoTank2:'',weighIn:'',weighOut:'',lots:[{lotId:'',count:'',unitKg:''}]},
     ppe:{workers:[0,1,2,3].map(()=>({date:d,shift:'',dn:'',name:'',items:{}}))},
     s2:{start:'',end:'',chk:{},sig:null,qc:QC_ITEMS.map(()=>({chk:false,sig:null}))},
     s3:{start:'',end:'',pump:'',pumpSig:null,airP:'',pumpAct:'',scrubber:'',scrubberSig:null,compressor:'',compP:'',utilAct:'',vents:[false,false,false,false,false,false],ventSig:null,ventAct:''},
@@ -230,7 +239,7 @@ function newBatch(){
     s6:{start:'',end:'',ctrl:false,airP:'',isoP:'',sig1:null,open:{},close:{},sig:null,act:''},
     done:{author:null}};
 }
-function ensure(b){ const n=newBatch(); for(const k of Object.keys(n)) if(b[k]==null) b[k]=n[k]; for(const s of ['mat','ppe','s2','s3','s4','s5','s6','done']) for(const k of Object.keys(n[s])) if(b[s][k]==null) b[s][k]=n[s][k]; return b; }
+function ensure(b){ const n=newBatch(); for(const k of Object.keys(n)) if(b[k]==null) b[k]=n[k]; for(const s of ['mat','ppe','s2','s3','s4','s5','s6','done']) for(const k of Object.keys(n[s])) if(b[s][k]==null) b[s][k]=n[s][k]; if(b.status!=='완료') b.mat.isoTank2=''; return b; }
 const PK=()=>cur.mat.product, PD=()=>PROD[cur.mat.product]||PROD.HF;
 const locked=()=>cur&&cur.status==='완료';
 function matRows(b){ b=b||cur; const pd=PROD[b.mat.product]||PROD.HF;
@@ -249,7 +258,7 @@ function ibcSeq(b){ b=b||cur; const pd=PROD[b.mat.product]||PROD.HF; const out=[
 /* ---------------- 단계별 진행률 ---------------- */
 function stepProg(i,b){ b=b||cur; const c=[];
   const S=v=>!!(v&&v.n);
-  if(i===0){ c.push(!!b.mat.batchId,!!b.mat.mfgDate,!!b.mat.shipDate,!!b.mat.isoTank,weigh(b)!=null,matRows(b).length>0,matPass(b)); }
+  if(i===0){ c.push(!!b.mat.batchId,!!b.mat.prodId,!!b.mat.mfgDate,!!b.mat.shipDate,!!b.mat.isoTank,weigh(b)!=null,matRows(b).length>0,matPass(b)); }
   if(i===1){ const w=b.ppe.workers.filter(x=>x.name&&x.name.n||x.name&&typeof x.name==='string'); if(!w.length) c.push(false); w.forEach(x=>{ c.push(!!x.dn); PPE_ITEMS.forEach(([k])=>c.push(!!x.items[k])); }); }
   if(i===2){ c.push(!!b.s2.start,!!b.s2.end,...['isoUn','isoNo','isoName','weigh','cdsUn','cdsName','v105'].map(k=>!!b.s2.chk[k]),S(b.s2.sig),...b.s2.qc.flatMap(q=>[!!q.chk,S(q.sig)])); }
   if(i===3){ c.push(!!b.s3.start,!!b.s3.end,!!b.s3.pump,S(b.s3.pumpSig),b.s3.airP!=='',!!b.s3.scrubber,S(b.s3.scrubberSig),!!b.s3.compressor,b.s3.compP!=='',...b.s3.vents.map(Boolean),S(b.s3.ventSig)); }
@@ -300,7 +309,7 @@ function vList(){
     ${bs.map(b=>{ ensure(b); const t=matTotal(b); const tot=STEPS.map((s,i)=>stepProg(i,b)).reduce((a,[x,y])=>[a[0]+x,a[1]+y],[0,0]);
       return `<div class="card list-card" onclick="app.open('${b.id}')">
       <div>${b.status==='완료'?'<span class="pill ok">완료</span>':'<span class="pill warn">작성중</span>'}</div>
-      <div><div class="bn">${esc(b.mat.batchId||'(Batch ID 미정)')}</div><div class="help">${esc(b.mat.product)} · 제조 ${esc(b.mat.mfgDate)} · 출고 ${esc(b.mat.shipDate||'-')} · ${esc(b.mat.customer||'')} · ISO ${esc(b.mat.isoTank||'')} · ${fmt(t)} kg</div>
+      <div><div class="bn">${esc(b.mat.batchId||'(Batch ID 미정)')} <span style="color:var(--ok);font-size:15px">${esc(b.mat.prodId||'')}</span></div><div class="help">${esc(b.mat.product)} · 제조 ${esc(b.mat.mfgDate)} · 출고 ${esc(b.mat.shipDate||'-')} · ${esc(b.mat.customer||'')} · ISO ${esc(b.mat.isoTank||'')} · ${fmt(t)} kg</div>
       ${b.status==='완료'?`<div class="help">완료 ${esc(dt(b.done.at||''))} · ${esc(b.done.author&&b.done.author.n||'')} ${b.done.spUrl?'· <span class="pill blue">SharePoint 저장됨</span>':'· <span class="pill gray">SharePoint 미저장</span>'}</div>`:''}</div>
       <div class="help" style="text-align:right">${b.status==='완료'?'':`진행 ${tot[0]}/${tot[1]}<br><button class="btn sm danger" style="margin-top:6px" onclick="event.stopPropagation();app.delBatch('${b.id}')">삭제</button>`}</div></div>`; }).join('')||'<div class="card help">배치가 없습니다</div>'}`;
 }
@@ -315,11 +324,11 @@ function vMat(){
     <div class="fld" style="margin-bottom:12px"><label>Product</label><div class="prodsel">${PROD_KEYS.map(k=>{ const cs=curStock(k); return `<button class="tog ${PK()===k?'on':''}" ${dis()} onclick="app.setProd('${k}')" style="flex-direction:column;padding:6px 14px">${k}<small style="font-weight:600;font-size:12px;color:${cs.kg>0?'var(--mut)':'var(--bad)'}">${cs.kg>0?`현재고 ${fmt(cs.kg)} kg · ${fmt1(cs.ea)} ${PROD[k].drum?'Drum':'IBC'}`:'현재고 없음'}</small></button>`; }).join('')}</div></div>
     <div class="grid">
       <div class="fld"><label>MFG Start Date (제조일)</label>${inp('mat.mfgDate','date')}</div>
-      <div class="fld"><label>Ship Date (출고일) → Batch ID</label>${inp('mat.shipDate','date')}</div>
-      <div class="fld"><label>Batch ID</label><div class="row" style="flex-wrap:nowrap">${inp('mat.batchId','text','style="font-family:ui-monospace,monospace;font-weight:700"')}<button class="btn sm" style="white-space:nowrap" ${dis()} onclick="app.genId()">자동</button></div></div>
+      <div class="fld"><label>Batch ID (생성 기준 · MFG Start)</label><div class="row" style="flex-wrap:nowrap">${inp('mat.batchId','text','style="font-family:ui-monospace,monospace;font-weight:700"')}<button class="btn sm" style="white-space:nowrap" ${dis()} onclick="app.genId()">자동</button></div></div>
+      <div class="fld"><label>Ship Date (출고일)</label>${inp('mat.shipDate','date')}</div>
+      <div class="fld"><label>제품 ID (출하 기준 · Shipping List)</label><div class="row" style="flex-wrap:nowrap">${inp('mat.prodId','text','style="font-family:ui-monospace,monospace;font-weight:700;color:var(--ok)"')}<button class="btn sm" style="white-space:nowrap" ${dis()} onclick="app.genProdId()">자동</button></div></div>
       <div class="fld"><label>Customer</label><input list="custList" data-k="mat.customer" value="${esc(b.mat.customer)}" ${dis()}><datalist id="custList">${(state.cfg.customers||[]).map(c=>`<option value="${esc(c)}">`).join('')}</datalist></div>
-      <div class="fld"><label>ISO Tank #</label>${isoSel('mat.isoTank')}</div>
-      <div class="fld"><label>ISO Tank # (2)</label>${isoSel('mat.isoTank2',true)}</div>
+      <div class="fld"><label>ISO Tank # (배치당 1대)</label>${isoSel('mat.isoTank')}</div>
       <div class="fld"><label>Target Amount (kg)</label><div class="ro">${fmt(pd.target)}</div></div>
       <div class="fld"><label>Required IBC or Pallet</label><div class="ro">${esc(pd.req)}</div></div>
       <div class="fld"><label>UN # · Filling Room · Valve</label><div class="ro">UN ${pd.un} · Room ${pd.room} · ${pd.v}</div></div>
@@ -451,14 +460,14 @@ function vDone(){ const b=cur, pd=PD(), w=weigh(), tot=matTotal();
   if(w&&!w.pass) warn.push('Weighbridge Balance Fail'); if(w&&!w.safe) warn.push('계근 판정: 위험 투입 검토 필요');
   const ms=state.cfg.ms||{}; const spOk=!!(ms.clientId&&ms.shareUrl);
   if(locked()) return `<div class="card"><h2>작성 완료 <span class="pill ok">완료</span></h2>
-    <div class="kv"><b>Batch ID</b><span>${esc(b.mat.batchId)}</span><b>작성자</b><span>${esc(b.done.author&&b.done.author.n||'')} · ${esc(dt(b.done.at||''))}</span>
+    <div class="kv"><b>Batch ID</b><span>${esc(b.mat.batchId)}</span><b>제품 ID (출하)</b><span>${esc(b.mat.prodId||'-')}</span><b>작성자</b><span>${esc(b.done.author&&b.done.author.n||'')} · ${esc(dt(b.done.at||''))}</span>
     <b>재고 등록</b><span>${b.done.invIsoId?`ISO 충전 등록됨 (${fmt(tot)} kg · ISO ${esc(b.mat.isoTank)})`:'—'}</span>
     <b>PDF</b><span>${esc(b.done.pdfName||'')}</span><b>SharePoint</b><span>${b.done.spUrl?`<a href="${esc(b.done.spUrl)}" target="_blank">폴더에서 열기</a>`:'<span class="pill gray">미저장</span>'}</span></div>
     <div class="row" style="margin-top:16px"><button class="btn" onclick="app.pdf('download')">PDF 다운로드</button>
       <button class="btn pri" ${spOk?'':'disabled'} onclick="app.pdf('sp')">SharePoint에 다시 저장</button>
       <button class="btn danger" onclick="app.reopen()">완료 취소 (재고 등록 되돌리기)</button></div></div>`;
   return `<div class="card"><h2>작성 완료</h2>
-    <div class="kv" style="margin-bottom:14px"><b>Batch ID</b><span>${esc(b.mat.batchId||'-')}</span><b>Product</b><span>${esc(b.mat.product)} · UN ${pd.un}</span><b>ISO Tank</b><span>${esc([b.mat.isoTank,b.mat.isoTank2].filter(Boolean).join(' / '))}</span>
+    <div class="kv" style="margin-bottom:14px"><b>Batch ID</b><span>${esc(b.mat.batchId||'-')}</span><b>제품 ID (출하)</b><span>${esc(b.mat.prodId||'-')}</span><b>Product</b><span>${esc(b.mat.product)} · UN ${pd.un}</span><b>ISO Tank</b><span>${esc([b.mat.isoTank,b.mat.isoTank2].filter(Boolean).join(' / '))}</span>
       <b>Customer</b><span>${esc(b.mat.customer)}</span><b>투입량</b><span>${fmt(tot)} kg (${matRows().map(r=>`${esc(r.sourceLot)} ${r.cnt}`).join(', ')})</span></div>
     ${miss.length?`<div class="banner warn"><b>미입력 항목</b><br>${miss.map(esc).join('<br>')}</div>`:'<div class="banner ok">모든 체크 항목이 입력되었습니다</div>'}
     ${warn.length?`<div class="banner bad">${warn.map(esc).join('<br>')}</div>`:''}
@@ -510,7 +519,8 @@ document.addEventListener('change',e=>{
   if(/^mat\.lots\.\d+\.lotId$/.test(p)){ const i=+p.split('.')[2]; const l=state.lots.find(x=>x.id===t.value); const r=cur.mat.lots[i];
     r.sourceLot=l?l.sourceLot:''; r.snap=l?{sourceLot:l.sourceLot,unitKg:l.unitKg,product:l.product}:null;
     if(l&&!r.count){ const pd=PD(); const others=matRows().filter((x,j)=>x!==r).reduce((s,x)=>s+x.cnt,0); const u=pd.unit; r.count=String(Math.max(0,Math.min(pd.count-others,Math.floor(lotRem(l)/u)))); } }
-  if(p==='mat.shipDate'&&(!cur.mat.batchId||/-\d{6}[A-J]$/.test(cur.mat.batchId))) cur.mat.batchId=nextBatchId(PK(),cur.mat.shipDate);
+  if(p==='mat.mfgDate'&&autoId(cur.mat.batchId)) cur.mat.batchId=nextBatchId(PK(),cur.mat.mfgDate);
+  if(p==='mat.shipDate'&&autoId(cur.mat.prodId)) cur.mat.prodId=nextProdId(PK(),cur.mat.shipDate);
   touch(); render();
 });
 function newIsoModal(path){
@@ -531,7 +541,7 @@ function pickName(path){
 async function registerInventory(){
   const b=cur, pd=PD(), ip=invProd(PK()); if(!ip) throw new Error('재고 품목을 찾을 수 없습니다');
   const rows=matRows().filter(r=>r.lotId&&r.kg>0); if(!rows.length) throw new Error('투입 Lot이 없습니다');
-  const date=b.mat.mfgDate||today(), jl=b.mat.batchId, cust=b.mat.customer||'', note=`Batch Sheet ${jl}`;
+  const date=b.mat.mfgDate||today(), jl=b.mat.prodId||b.mat.batchId, cust=b.mat.customer||'', note=`Batch Sheet ${b.mat.batchId}`;
   const isoId=uid('is'), uids=[], now=new Date().toISOString(), base={createdBy:who(),createdAt:now,updatedBy:who(),updatedAt:now};
   const ops=rows.map(r=>{ const id=uid('us'); uids.push(id); return {col:COL.usage,data:{id,lotId:r.lotId,product:ip.key,date,type:'ISO충전',qtyKg:r.kg,ea:r.cnt,customer:cust,jnfamLot:jl,note,isoId,batchSheetId:b.id,...base}}; });
   const tot=rows.reduce((s,r)=>s+r.kg,0);
@@ -544,7 +554,8 @@ async function registerInventory(){
 }
 async function complete(){
   const b=cur; if(locked()) return;
-  if(!b.mat.batchId){ toast('Batch ID를 입력하세요'); state.step=0; render(); return; }
+  if(!b.mat.batchId||!b.mat.prodId){ toast('Batch ID와 제품 ID를 입력하세요'); state.step=0; render(); return; }
+  if(state.isos.some(i=>i.jnfamLot===b.mat.prodId&&i.batchSheetId!==b.id)||state.batches.some(x=>x.id!==b.id&&x.status==='완료'&&x.mat&&x.mat.prodId===b.mat.prodId)){ if(!confirm(`제품 ID ${b.mat.prodId}가 재고 현황 시스템/다른 배치에 이미 있습니다. 그래도 진행할까요?`)) return; }
   if(!matRows().some(r=>r.lotId&&r.kg>0)){ toast('Material Sheet에서 Lot을 선택하세요'); state.step=0; render(); return; }
   if(!(b.done.author&&b.done.author.n)){ toast('작성자 서명을 선택하세요'); return; }
   const dup=state.batches.find(x=>x.id!==b.id&&x.status==='완료'&&x.mat&&x.mat.batchId===b.mat.batchId); if(dup){ toast('같은 Batch ID로 완료된 배치가 이미 있습니다'); return; }
@@ -586,8 +597,8 @@ function pdfHeader(title,b){ const pd=PROD[b.mat.product]||PROD.HF;
   return `<div class="hdr"><h1 style="display:flex;align-items:center;justify-content:center">${title}</h1>
   <table class="appr"><tr><th>작성</th><th>승인</th></tr><tr><td>${P_SIG(b.done.author)}</td><td></td></tr></table></div>`; }
 function pdfInfo(b){ const pd=PROD[b.mat.product]||PROD.HF;
-  return `<table><tr><th>Type</th><th>Material No.</th><th>Customer</th><th>Filling Room</th><th>Batch Code</th><th>QTY: Kg</th><th>MFG Date</th><th>Ship Date</th></tr>
-  <tr><td class="c">${esc(b.mat.product)}</td><td class="c">${pd.un}</td><td class="c">${esc(b.mat.customer)}</td><td class="c">${pd.room}</td><td class="c"><b>${esc(b.mat.batchId)}</b></td><td class="c">${fmt(pd.target)}</td><td class="c">${esc(b.mat.mfgDate)}</td><td class="c">${esc(b.mat.shipDate||'')}</td></tr></table>`; }
+  return `<table><tr><th>Type</th><th>Material No.</th><th>Customer</th><th>Filling Room</th><th>Batch Code</th><th>제품 ID (출하)</th><th>QTY: Kg</th><th>MFG Date</th><th>Ship Date</th></tr>
+  <tr><td class="c">${esc(b.mat.product)}</td><td class="c">${pd.un}</td><td class="c">${esc(b.mat.customer)}</td><td class="c">${pd.room}</td><td class="c"><b>${esc(b.mat.batchId)}</b></td><td class="c"><b>${esc(b.mat.prodId||'')}</b></td><td class="c">${fmt(pd.target)}</td><td class="c">${esc(b.mat.mfgDate)}</td><td class="c">${esc(b.mat.shipDate||'')}</td></tr></table>`; }
 const pfoot=(b,n,t)=>`<div class="foot"><span>JNF AM LLC · Batch Sheet R2 · ${esc(b.mat.batchId)}</span><span>${n} / ${t}</span></div>`;
 function pdfPages(b){ ensure(b); const pd=PROD[b.mat.product]||PROD.HF, w=weigh(b), rows=matRows(b), tot=matTotal(b), pass=matPass(b), seq=ibcSeq(b), V=pd.v;
   const tr=(ps,pe)=>`<table><tr><th style="width:40%">공정 시작 날짜 및 시간</th><td>${P_T(ps)}</td><th style="width:18%">종료</th><td>${P_T(pe)}</td></tr></table>`;
@@ -598,7 +609,8 @@ function pdfPages(b){ ensure(b); const pd=PROD[b.mat.product]||PROD.HF, w=weigh(
   <table><tr><th style="width:26%">MFG START DATE (제조일)</th><td>${esc(b.mat.mfgDate)}</td><th>ISO Tank</th><td>${esc([b.mat.isoTank,b.mat.isoTank2].filter(Boolean).join(' / '))}</td></tr>
   <tr><th>Batch ID</th><td><b>${esc(b.mat.batchId)}</b></td><th>TARGET AMOUNT(Kg)</th><td>${fmt(pd.target)}</td></tr>
   <tr><th>Product</th><td>${esc(b.mat.product)} (UN ${pd.un})</td><th>Required IBC or Pallet</th><td>${esc(pd.req)}</td></tr>
-  <tr><th>SHIP DATE (출고일)</th><td>${esc(b.mat.shipDate||'')}</td><th>Customer</th><td>${esc(b.mat.customer)}</td></tr></table>
+  <tr><th>SHIP DATE (출고일)</th><td>${esc(b.mat.shipDate||'')}</td><th>제품 ID (출하 기준)</th><td><b>${esc(b.mat.prodId||'')}</b></td></tr>
+  <tr><th>Customer</th><td colspan="3">${esc(b.mat.customer)}</td></tr></table>
   <h2>ISO Tank's weighing Check (단위 : lb)</h2>
   <table><tr><th>Weigh-In (lb)</th><th>Weigh-Out (lb)</th><th>前 customer Loading (lb)</th><th>(kg)</th><th>판정</th></tr>
   <tr><td class="c">${w?fmt(b.mat.weighIn):''}</td><td class="c">${w?fmt(b.mat.weighOut):''}</td><td class="c">${w?fmt(w.bal):''}</td><td class="c">${w?fmt(w.kg):''}</td><td class="${w&&w.safe?'pass':'fail'}">${w?(w.safe?'안전 투입 가능':'위험 투입 검토 필요'):''}</td></tr></table>
@@ -782,13 +794,14 @@ window.app={
   go(v){ if(cur) saveNow(); state.view=v; if(v!=='edit') cur=null; window.scrollTo(0,0); render(); },
   step(i){ state.step=Math.max(0,Math.min(7,i)); window.scrollTo(0,0); render(); },
   listF(f){ state.listF=f; render(); },
-  newBatch(){ cur=newBatch(); cur.mat.batchId=nextBatchId(cur.mat.product,cur.mat.shipDate); cur.mat.lots=autoAlloc(cur.mat.product).rows; state.view='edit'; state.step=0; saveNow(); window.scrollTo(0,0); render(); },
+  newBatch(){ cur=newBatch(); cur.mat.batchId=nextBatchId(cur.mat.product,cur.mat.mfgDate); cur.mat.prodId=nextProdId(cur.mat.product,cur.mat.shipDate); cur.mat.lots=autoAlloc(cur.mat.product).rows; state.view='edit'; state.step=0; saveNow(); window.scrollTo(0,0); render(); },
   open(id){ const b=state.batches.find(x=>x.id===id); if(!b) return; cur=ensure(JSON.parse(JSON.stringify(b))); state.view='edit'; state.step=cur.status==='완료'?7:0; window.scrollTo(0,0); render(); },
   setProd(k){ if(locked()) return; const old=cur.mat.product; if(old===k) return;
     if(cur.mat.lots.some(r=>r.lotId)&&!confirm('품목을 바꾸면 선택한 Lot이 현재고 기준으로 다시 배정됩니다. 계속할까요?')) return;
-    cur.mat.product=k; cur.mat.isoTank=defIso(k,1); cur.mat.isoTank2=defIso(k,2); cur.mat.lots=autoAlloc(k).rows; cur.s4.chk={}; cur.s5.ibcChk={};
-    if(!cur.mat.batchId||/-\d{6}[A-J]$/.test(cur.mat.batchId)) cur.mat.batchId=nextBatchId(k,cur.mat.shipDate); touch(); render(); },
-  genId(){ cur.mat.batchId=nextBatchId(PK(),cur.mat.shipDate); touch(); render(); },
+    cur.mat.product=k; cur.mat.isoTank=defIso(k,1); cur.mat.isoTank2=''; cur.mat.lots=autoAlloc(k).rows; cur.s4.chk={}; cur.s5.ibcChk={};
+    if(autoId(cur.mat.batchId)) cur.mat.batchId=nextBatchId(k,cur.mat.mfgDate); if(autoId(cur.mat.prodId)) cur.mat.prodId=nextProdId(k,cur.mat.shipDate); touch(); render(); },
+  genId(){ cur.mat.batchId=nextBatchId(PK(),cur.mat.mfgDate); touch(); render(); },
+  genProdId(){ cur.mat.prodId=nextProdId(PK(),cur.mat.shipDate); touch(); render(); },
   alloc(){ if(locked()) return; if(cur.mat.lots.some(r=>r.lotId)&&!confirm('입력한 Lot을 지우고 현재고 선입선출로 다시 배정할까요?')) return;
     const r=autoAlloc(PK()); cur.mat.lots=r.rows; cur.s4.chk={}; cur.s5.ibcChk={}; touch(); render(); if(r.short>0) toast(`현재고가 부족합니다 — ${r.short} ${PD().drum?'Drum':'IBC'} 모자람`,4000); },
   addLot(){ cur.mat.lots.push({lotId:'',count:'',unitKg:''}); touch(); render(); },
