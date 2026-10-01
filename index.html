@@ -901,7 +901,7 @@ const useRelay=()=>!!(state.cfg.ms&&state.cfg.ms.relayUrl);
 function blobB64(blob){ return new Promise((ok,no)=>{ const r=new FileReader(); r.onload=()=>ok(String(r.result).split(',')[1]||''); r.onerror=()=>no(r.error); r.readAsDataURL(blob); }); }
 async function relayCall(body){ const ms=state.cfg.ms; if(!currentUser) throw new Error('Google 로그인이 필요합니다');
   const idToken=await currentUser.getIdToken();
-  const r=await fetch(ms.relayUrl,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({...body,idToken,driveId:ms.driveId||'',itemId:ms.itemId||''})});
+  const r=await fetch(ms.relayUrl,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({...body,idToken,driveId:ms.driveId||'',itemId:ms.itemId||'',shareUrl:ms.shareUrl||DEFAULT_SHARE})});
   let j; try{ j=await r.json(); }catch(e){ throw new Error('서버 응답 오류 ('+r.status+')'); }
   if(!j.ok) throw new Error(j.error||'서버 업로드 실패'); return j; }
 async function relayUpload(blob,name){ return relayCall({action:'upload',name,data:await blobB64(blob)}); }
@@ -1019,7 +1019,7 @@ window.app={
     c.passMin=+$('cfgMin').value||18200; c.passMax=+$('cfgMax').value||19000; c.maxKg=+$('cfgMaxKg').value||19000; c.weighDangerLb=+$('cfgDanger').value||40000; c.weighPassLb=+$('cfgWPass').value||500; await saveCfg(); render(); },
   async saveMs(){ const ms=state.cfg.ms; const nc=$('msClient').value.trim(), nt=$('msTenant').value.trim(), ns=$('msShare').value.trim();
     if(nc!==ms.clientId||nt!==ms.tenantId||ns!==ms.shareUrl){ ms.driveId=''; ms.itemId=''; ms.folderName=''; } ms.clientId=nc; ms.tenantId=nt; ms.shareUrl=ns; ms.relayUrl=($('msRelay')?$('msRelay').value.trim():'');
-    if(ms.relayUrl){ try{ busy(true,'서버 / 폴더 확인 중…'); const j=await relayCall({action:'ping'}); if(j.folderName){ ms.folderName=j.folderName; ms.folderUrl=j.folderUrl||ms.folderUrl; } await saveCfg(); busy(false); toast('서버 업로드 연결 확인: '+(j.folderName||'OK'),4000); }catch(e){ busy(false); try{ await saveCfg(); }catch(_){} toast('서버 연결 실패: '+(e.message||e),6000); } render(); return; }
+    if(ms.relayUrl){ try{ busy(true,'서버 / 폴더 확인 중…'); const j=await relayCall({action:'ping'}); if(j.folderName){ ms.folderName=j.folderName; ms.folderUrl=j.folderUrl||ms.folderUrl; } if(j.driveId&&j.itemId){ ms.driveId=j.driveId; ms.itemId=j.itemId; } await saveCfg(); busy(false); toast('서버 업로드 연결 확인: '+(j.folderName||'OK'),4000); }catch(e){ busy(false); try{ await saveCfg(); }catch(_){} toast('서버 연결 실패: '+(e.message||e),6000); } render(); return; }
     try{ await msalInit(); busy(true,'Microsoft 로그인 / 폴더 확인 중…'); const tk=await msToken(); await spResolve(tk); busy(false); toast('폴더 연결 확인: '+ms.folderName,4000); }catch(e){ busy(false); try{ await saveCfg(); }catch(_){} toast('연결 실패: '+(e.message||e),6000); } render(); },
   async msLogout(){ try{ const a=getMsal(); const acc=a.getAllAccounts()[0]; if(acc) await a.logoutPopup({account:acc}); }catch(e){} msPurge(); render(); },
   googleLogin, async logout(){ if(auth) await AUM.signOut(auth); }
