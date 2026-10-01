@@ -160,7 +160,7 @@ const VALVE_OPEN=['00','20','01','03','04','05','06','11','14'], VALVE_CLOSE=['0
 const AF_OPEN=['00','20','10','14'], AF_CLOSE=['08','11','13'];
 const STEPS=['Material','(1) PPE','(2) RM & ISO','(3) 설비 점검','(4) 투입 전 확인','(5) Valve · 투입','(6) Air Flushing','완료'];
 const DEF_CFG={workers:[],customers:['HWQ CTSV'],isoTanks:[{no:'240003 (7)',prod:'HF'},{no:'240002(1)',prod:'HF'},{no:'240004 (2)',prod:'HNO3'},{no:'240001 (6)',prod:'HCl'}],passMin:18200,passMax:19000,maxKg:19000,weighDangerLb:40000,weighPassLb:500,
-  ms:{clientId:'4483db59-77c7-4277-a795-540aaf732c5b',tenantId:'9e2f9e87-0f8e-4b71-87d4-c0b36430e0a6',shareUrl:DEFAULT_SHARE,driveId:'',itemId:'',folderName:''}};
+  ms:{clientId:'4483db59-77c7-4277-a795-540aaf732c5b',tenantId:'9e2f9e87-0f8e-4b71-87d4-c0b36430e0a6',shareUrl:DEFAULT_SHARE,driveId:'',itemId:'',folderName:'',relayUrl:''}};
 
 const state={batches:[],products:[],lots:[],usage:[],isos:[],outbound:[],outErr:null,ledgerMaster:null,cfg:JSON.parse(JSON.stringify(DEF_CFG)),loaded:false,view:'list',step:0,listF:'active'};
 let cur=null, fb=null, AUM=null, auth=null, currentUser=null, unsubs=[], saveT=null;
@@ -510,7 +510,8 @@ function vSettings(){ const c=state.cfg, ms=c.ms||{};
       <div class="fld"><label>Application (client) ID</label><input id="msClient" value="${esc(ms.clientId||'')}"></div>
       <div class="fld"><label>Directory (tenant) ID</label><input id="msTenant" value="${esc(ms.tenantId||'')}"></div></div>
     <div class="fld" style="margin-top:10px"><label>Batch Sheet 폴더 공유 링크</label><input id="msShare" value="${esc(ms.shareUrl||DEFAULT_SHARE)}"></div>
-    <div class="help" style="margin-top:8px">연결된 폴더: ${ms.itemId?`<span class="pill ok">${esc(ms.folderName||'확인됨')}</span>`:'<span class="pill gray">미확인</span>'} · MS 로그인: ${esc(msAccount()||'없음')}</div>
+    <div class="fld" style="margin-top:10px"><label>서버 업로드 URL (Apps Script 웹 앱) — 입력 시 태블릿 MS 로그인 불필요</label><input id="msRelay" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(ms.relayUrl||'')}"></div>
+    <div class="help" style="margin-top:8px">연결된 폴더: ${ms.itemId?`<span class="pill ok">${esc(ms.folderName||'확인됨')}</span>`:'<span class="pill gray">미확인</span>'} · ${ms.relayUrl?'<span class="pill ok">서버 업로드 사용</span>':'MS 로그인: '+esc(msAccount()||'없음')}</div>
     <div class="row" style="margin-top:12px"><button class="btn pri" onclick="app.saveMs()">저장 + 폴더 연결 테스트</button>${msAccount()?'<button class="btn" onclick="app.msLogout()">MS 로그아웃</button>':''}</div></div>
   <div class="card help">Firebase: <code>${FB_CFG.projectId}</code> · 컬렉션 <code>batch_sheets</code> <code>batch_config</code> (+ 재고 <code>inv_*</code>) · 사용자 ${esc(who()||'-')} ${currentUser?'· <a href="#" onclick="app.logout();return false">로그아웃</a>':''}${DEMO?' · <b>DEMO 모드 (저장 안 됨)</b>':''}</div>`;
 }
@@ -715,7 +716,7 @@ async function complete(){
   if(miss.length) msg+=`\n\n⚠ 미입력 단계: ${miss.join(', ')}`; if(!matPass()) msg+=`\n⚠ Material 합계 Fail`; if(over.length) msg+=`\n⚠ 현재고 초과 Lot: ${over.map(r=>r.sourceLot).join(', ')}`;
   if(!confirm(msg)) return;
   let spMode=cfgSpReady()?'sp':'download';
-  if(spMode==='sp'){ try{ await msToken(); }catch(e){ if(!confirm('Microsoft 로그인 실패: '+(e.message||e)+'\n\nSharePoint 저장 없이 완료하고 PDF는 다운로드할까요?')) return; spMode='download'; } }
+  if(spMode==='sp'&&!useRelay()){ try{ await msToken(); }catch(e){ if(!confirm('Microsoft 로그인 실패: '+(e.message||e)+'\n\nSharePoint 저장 없이 완료하고 PDF는 다운로드할까요?')) return; spMode='download'; } }
   busy(true,'재고 현황 시스템에 등록 중…');
   try{
     if(!b.done.invIsoId){ const r=await registerInventory(); b.done.invIsoId=r.isoId; b.done.invUsageIds=r.uids; b.done.invOutboundId=r.outId||''; b.done.invOutCreated=!!r.outCreated; b.done.ledBuyer=r.buyer||''; b.done.viaUse=!!r.viaUse; }
@@ -877,14 +878,14 @@ const pdfName=b=>`BatchSheet_${(b.mat.batchId||'NOID').replace(/[^\w\-]/g,'_')}_
 function downloadBlob(blob,name){ const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},2000); }
 async function makePdf(mode){
   const b=cur; const name=pdfName(b);
-  if(mode==='sp'){ try{ await msToken(); }catch(e){ toast('Microsoft 로그인 실패: '+(e.message||e),5000); if(!confirm('Microsoft 로그인에 실패했습니다. PDF를 이 기기에 다운로드할까요?')) return; mode='download'; } }
+  if(mode==='sp'&&!useRelay()){ try{ await msToken(); }catch(e){ toast('Microsoft 로그인 실패: '+(e.message||e),5000); if(!confirm('Microsoft 로그인에 실패했습니다. PDF를 이 기기에 다운로드할까요?')) return; mode='download'; } }
   busy(true,'PDF 생성 중…');
   try{
     const blob=await buildPdf(b);
     if(mode==='preview'){ busy(false); const u=URL.createObjectURL(blob); const w=window.open(u,'_blank'); if(!w) downloadBlob(blob,name); return; }
     if(mode==='download'){ busy(false); downloadBlob(blob,name); b.done.pdfName=name; await saveNow(); render(); return; }
     busy(true,'SharePoint에 업로드 중…');
-    const item=await spUpload(blob,name);
+    const item=await (useRelay()?relayUpload(blob,name):spUpload(blob,name));
     b.done.pdfName=name; b.done.spUrl=item.webUrl||''; b.done.spAt=new Date().toISOString(); await saveNow();
     busy(false); toast('SharePoint Batch Sheet 폴더에 저장되었습니다',4000); render();
   }catch(e){ busy(false); console.error(e);
@@ -894,7 +895,16 @@ async function makePdf(mode){
 
 /* ---------------- Microsoft Graph (SharePoint) ---------------- */
 let msalApp=null;
-const cfgSpReady=()=>{ const ms=state.cfg.ms||{}; return !DEMO&&!!(ms.clientId&&ms.shareUrl); };
+const cfgSpReady=()=>{ const ms=state.cfg.ms||{}; return !DEMO&&!!(ms.relayUrl||(ms.clientId&&ms.shareUrl)); };
+/* 서버 중계 업로드: 태블릿은 Google 로그인만, SharePoint 저장은 Apps Script가 회사 앱 계정으로 처리 (MS 로그인 불필요) */
+const useRelay=()=>!!(state.cfg.ms&&state.cfg.ms.relayUrl);
+function blobB64(blob){ return new Promise((ok,no)=>{ const r=new FileReader(); r.onload=()=>ok(String(r.result).split(',')[1]||''); r.onerror=()=>no(r.error); r.readAsDataURL(blob); }); }
+async function relayCall(body){ const ms=state.cfg.ms; if(!currentUser) throw new Error('Google 로그인이 필요합니다');
+  const idToken=await currentUser.getIdToken();
+  const r=await fetch(ms.relayUrl,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({...body,idToken,driveId:ms.driveId||'',itemId:ms.itemId||''})});
+  let j; try{ j=await r.json(); }catch(e){ throw new Error('서버 응답 오류 ('+r.status+')'); }
+  if(!j.ok) throw new Error(j.error||'서버 업로드 실패'); return j; }
+async function relayUpload(blob,name){ return relayCall({action:'upload',name,data:await blobB64(blob)}); }
 function getMsal(){ const ms=state.cfg.ms||{}; if(!ms.clientId) throw new Error('설정 탭에서 Microsoft Client ID를 입력하세요');
   if(!window.msal) throw new Error('MSAL 라이브러리를 불러오지 못했습니다');
   if(!msalApp||msalApp._cid!==ms.clientId){ msalApp=new msal.PublicClientApplication({auth:{clientId:ms.clientId,authority:'https://login.microsoftonline.com/'+(ms.tenantId||'organizations'),redirectUri:location.origin+location.pathname},cache:{cacheLocation:'localStorage'}}); msalApp._cid=ms.clientId; }
@@ -904,9 +914,17 @@ const SCOPES=['Files.ReadWrite.All'];
 /* 팝업 차단을 피하려고 initialize는 미리 해두고, 로그인 팝업은 버튼 탭 직후 첫 await에서 연다 */
 let msalInitP=null;
 function msalInit(){ try{ const a=getMsal(); if(!msalInitP||msalInitP._a!==a){ msalInitP=a.initialize?a.initialize():Promise.resolve(); msalInitP._a=a; } return msalInitP; }catch(e){ return Promise.resolve(); } }
-async function msToken(){ const a=getMsal(); const acc=a.getAllAccounts()[0];
-  if(acc){ try{ return (await a.acquireTokenSilent({scopes:SCOPES,account:acc})).accessToken; }catch(e){} }
-  const r=await a.acquireTokenPopup({scopes:SCOPES,account:acc,prompt:acc?undefined:'select_account'}); return r.accessToken; }
+/* 만료된 MSAL 캐시(토큰·계정) 삭제 — 오래 안 쓴 태블릿의 refresh token 만료(AADSTS70008) 대응 */
+function msPurge(){ try{ Object.keys(localStorage).forEach(k=>{ if(/^msal\.|login\.windows\.net|login\.microsoftonline\.com/i.test(k)) localStorage.removeItem(k); }); }catch(e){}
+  try{ Object.keys(sessionStorage).forEach(k=>{ if(/^msal\.|login\.windows\.net|login\.microsoftonline\.com/i.test(k)) sessionStorage.removeItem(k); }); }catch(e){}
+  msalApp=null; msalInitP=null; }
+const msExpired=e=>/invalid_grant|interaction_required|login_required|consent_required|AADSTS(70008|700082|50173|50133|50078|50076)/i.test(String((e&&(e.errorCode+' '+e.message))||e));
+async function msToken(){ let a=getMsal(); await msalInit(); const acc=a.getAllAccounts()[0];
+  if(acc){ try{ return (await a.acquireTokenSilent({scopes:SCOPES,account:acc})).accessToken; }catch(e){ if(msExpired(e)){ msPurge(); a=getMsal(); await msalInit(); } } }
+  const acc2=a.getAllAccounts()[0];
+  try{ return (await a.acquireTokenPopup({scopes:SCOPES,account:acc2,prompt:'select_account'})).accessToken; }
+  catch(e){ if(!msExpired(e)) throw e; msPurge(); a=getMsal(); await msalInit();
+    return (await a.acquireTokenPopup({scopes:SCOPES,prompt:'select_account'})).accessToken; } }
 async function graph(tk,url,opt={}){ const r=await fetch(url.startsWith('http')?url:'https://graph.microsoft.com/v1.0'+url,{...opt,headers:{Authorization:'Bearer '+tk,...(opt.headers||{})}});
   if(!r.ok){ let m=r.status+''; try{ const j=await r.json(); m+=' '+(j.error&&(j.error.code+': '+j.error.message)||''); }catch(e){} throw new Error('Graph '+m); } return r.status===204?{}:r.json(); }
 function shareId(u){ const b=btoa(unescape(encodeURIComponent(u))).replace(/=+$/,'').replace(/\//g,'_').replace(/\+/g,'-'); return 'u!'+b; }
@@ -1000,9 +1018,10 @@ window.app={
   async saveSettings(){ const c=state.cfg; c.workers=$('cfgWorkers').value.split('\n').map(s=>s.trim()).filter(Boolean); c.customers=$('cfgCust').value.split('\n').map(s=>s.trim()).filter(Boolean);
     c.passMin=+$('cfgMin').value||18200; c.passMax=+$('cfgMax').value||19000; c.maxKg=+$('cfgMaxKg').value||19000; c.weighDangerLb=+$('cfgDanger').value||40000; c.weighPassLb=+$('cfgWPass').value||500; await saveCfg(); render(); },
   async saveMs(){ const ms=state.cfg.ms; const nc=$('msClient').value.trim(), nt=$('msTenant').value.trim(), ns=$('msShare').value.trim();
-    if(nc!==ms.clientId||nt!==ms.tenantId||ns!==ms.shareUrl){ ms.driveId=''; ms.itemId=''; ms.folderName=''; } ms.clientId=nc; ms.tenantId=nt; ms.shareUrl=ns;
+    if(nc!==ms.clientId||nt!==ms.tenantId||ns!==ms.shareUrl){ ms.driveId=''; ms.itemId=''; ms.folderName=''; } ms.clientId=nc; ms.tenantId=nt; ms.shareUrl=ns; ms.relayUrl=($('msRelay')?$('msRelay').value.trim():'');
+    if(ms.relayUrl){ try{ busy(true,'서버 / 폴더 확인 중…'); const j=await relayCall({action:'ping'}); if(j.folderName){ ms.folderName=j.folderName; ms.folderUrl=j.folderUrl||ms.folderUrl; } await saveCfg(); busy(false); toast('서버 업로드 연결 확인: '+(j.folderName||'OK'),4000); }catch(e){ busy(false); try{ await saveCfg(); }catch(_){} toast('서버 연결 실패: '+(e.message||e),6000); } render(); return; }
     try{ await msalInit(); busy(true,'Microsoft 로그인 / 폴더 확인 중…'); const tk=await msToken(); await spResolve(tk); busy(false); toast('폴더 연결 확인: '+ms.folderName,4000); }catch(e){ busy(false); try{ await saveCfg(); }catch(_){} toast('연결 실패: '+(e.message||e),6000); } render(); },
-  async msLogout(){ try{ const a=getMsal(); const acc=a.getAllAccounts()[0]; if(acc) await a.logoutPopup({account:acc}); }catch(e){} render(); },
+  async msLogout(){ try{ const a=getMsal(); const acc=a.getAllAccounts()[0]; if(acc) await a.logoutPopup({account:acc}); }catch(e){} msPurge(); render(); },
   googleLogin, async logout(){ if(auth) await AUM.signOut(auth); }
 };
 window.$=$;
