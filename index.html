@@ -135,7 +135,7 @@ table.t td.num,table.t th.num{text-align:right;font-variant-numeric:tabular-nums
        batch_sheets   : 배치시트 문서 (작성중/완료)
        batch_config   : main 문서 — 작업자 명단, SharePoint 설정, 기준값
        inv_lots / inv_usage / inv_isos / inv_products : 재고 현황 시스템 (읽기 + 완료 시 ISO 충전 등록)
-       outbound / config : 수불부 — 완료 시 ISO 출하(Goods Issue) 등록 또는 기존 출고와 연결 (완료 = 출하)
+       (수불부 출고는 Batch Sheet에서 하지 않음 — 재고 현황 › ISO 탱크 › 출하 처리 시 등록)
    - 사용 등록: Material 단계에서 재고 선차감(ISO 충전 + ISO 대기) → 다른 배치에 같은 재고 배정 방지, 삭제·사용취소 시 복원
    - PDF: html2canvas + jsPDF → SharePoint(Microsoft Graph, MSAL 로그인) 업로드
    ===================================================================== */
@@ -469,8 +469,8 @@ function vDone(){ const b=cur, pd=PD(), w=weigh(), tot=matTotal();
   const ms=state.cfg.ms||{}; const spOk=!!(ms.clientId&&ms.shareUrl);
   if(locked()) return `<div class="card"><h2>작성 완료 <span class="pill ok">완료</span></h2>
     <div class="kv"><b>Batch ID</b><span>${esc(b.mat.batchId)}</span><b>제품 ID (출하)</b><span>${esc(b.mat.prodId||'-')}</span><b>작성자</b><span>${esc(b.done.author&&b.done.author.n||'')} · ${esc(dt(b.done.at||''))}</span>
-    <b>재고 등록</b><span>${b.done.invIsoId?`ISO 충전 + 출하완료 (${fmt(tot)} kg · ISO ${esc(b.mat.isoTank)} · ${esc(shipDateOf(b))})`:'—'}</span>
-    <b>수불부 출고</b><span>${(()=>{ const o=state.outbound.find(x=>x.id===b.done.invOutboundId); return o?`${b.done.invOutCreated?'등록됨':'기존 출고와 연결됨'} — ${esc(dstr(o.date))} ${esc(o.buyer||'')} · ${fmt(o.qty)} kg`:(b.done.invOutboundId?'<span class="pill warn">수불부에서 삭제됨</span>':'<span class="pill gray">미반영 — 재고 현황 › ISO 탱크에서 “수불부 반영”</span>'); })()}</span>
+    <b>재고 등록</b><span>${b.done.invIsoId?`ISO 충전 (${fmt(tot)} kg · ISO ${esc(b.mat.isoTank)})`:'—'}</span>
+    <b>ISO 탱크</b><span>${(()=>{ const i=state.isos.find(x=>x.id===b.done.invIsoId); return !i?'<span class="pill gray">—</span>':i.status==='대기'?'<span class="pill warn">대기</span> — 실제 출하 시 재고 현황 › ISO 탱크 › “출하 처리” (수불부 출고 등록)':`<span class="pill ok">${esc(i.status)}</span> ${esc(dstr(i.shipDate))}`; })()}</span>
     <b>PDF</b><span>${esc(b.done.pdfName||'')}</span><b>SharePoint</b><span>${b.done.spUrl?`<a href="${esc(b.done.spUrl)}" target="_blank">폴더에서 열기</a>`:'<span class="pill gray">미저장</span>'}</span></div>
     <div class="row" style="margin-top:16px"><button class="btn" onclick="app.pdf('download')">PDF 다운로드</button>
       <button class="btn pri" ${spOk?'':'disabled'} onclick="app.pdf('sp')">SharePoint에 다시 저장</button>
@@ -481,9 +481,8 @@ function vDone(){ const b=cur, pd=PD(), w=weigh(), tot=matTotal();
     ${miss.length?`<div class="banner warn"><b>미입력 항목</b><br>${miss.map(esc).join('<br>')}</div>`:'<div class="banner ok">모든 체크 항목이 입력되었습니다</div>'}
     ${warn.length?`<div class="banner bad">${warn.map(esc).join('<br>')}</div>`:''}
     <div class="chk-row"><div class="lb">작성자 서명</div><div></div>${sig('done.author','작성자 선택')}</div>
-    ${vLedger()}
-    <div class="banner blue" style="margin-top:12px">작성 완료를 누르면 (완료 = 출하)<br>① 재고 현황 시스템에 Lot별 "ISO 충전" 차감 + ISO 탱크(출하완료, Ship Date 기준) 생성<br>② 수불부에 ISO 출고 등록 또는 선택한 기존 출고와 연결<br>③ PDF 생성 → ${spOk?'SharePoint Batch Sheet 폴더에 저장':'<b>SharePoint 미설정 — PDF 다운로드만 됩니다 (설정 탭)</b>'}<br>④ 배치는 읽기 전용으로 잠깁니다</div>
-    <div class="row" style="margin-top:12px"><button class="btn" onclick="app.pdf('preview')">PDF 미리보기</button><button class="btn ok" onclick="app.complete()">작성 완료 → 재고·출하·수불부 등록 + PDF 저장</button>
+    <div class="banner blue" style="margin-top:12px">작성 완료를 누르면<br>① 재고 현황 시스템에 Lot별 "ISO 충전" 차감 + ISO 탱크(<b>대기</b>) 생성 (사용 등록했으면 그대로 유지)<br>② 출하·수불부 출고는 <b>실제 출하 시</b> 재고 현황 › ISO 탱크 › “출하 처리”에서 진행<br>③ PDF 생성 → ${spOk?'SharePoint Batch Sheet 폴더에 저장':'<b>SharePoint 미설정 — PDF 다운로드만 됩니다 (설정 탭)</b>'}<br>④ 배치는 읽기 전용으로 잠깁니다</div>
+    <div class="row" style="margin-top:12px"><button class="btn" onclick="app.pdf('preview')">PDF 미리보기</button><button class="btn ok" onclick="app.complete()">작성 완료 → ISO 충전 등록 + PDF 저장</button>
       <span style="flex:1"></span><button class="btn danger" onclick="app.delBatch()">배치 삭제</button></div></div>`;
 }
 
@@ -657,47 +656,20 @@ async function unuse(){
 
 /* ---------------- 작성 완료: 재고 등록 ---------------- */
 async function registerInventory(){
+  /* 작성 완료 = ISO 충전(대기). 출하·수불부 출고는 재고 현황 › ISO 탱크 › 출하 처리에서 실제 출하 시 처리 */
   const b=cur; const used=isUsed(b)?b.mat.used:null;
-  const shipDate=shipDateOf(b), tankNo=[b.mat.isoTank,b.mat.isoTank2].filter(Boolean).join(' / ');
-  const jl=b.mat.prodId||b.mat.batchId, cust=b.mat.customer||'', now=new Date().toISOString(), base={createdBy:who(),createdAt:now,updatedBy:who(),updatedAt:now};
-  let ops, isoId, uids, tot, h, ip;
-  if(used){ /* 사용 등록된 배치: 차감은 이미 됨 → ISO를 출하완료로 전환 */
-    ip=invProd(b.mat.product); isoId=used.isoId; uids=used.usageIds||[]; tot=+used.kg||matTotal();
+  const tankNo=[b.mat.isoTank,b.mat.isoTank2].filter(Boolean).join(' / ');
+  const jl=b.mat.prodId||b.mat.batchId, cust=b.mat.customer||'', now=new Date().toISOString();
+  let ops, isoId, uids, h;
+  if(used){ /* 사용 등록된 배치: 차감·ISO(대기)는 이미 있음 → 최신 정보만 반영 */
+    const ip=invProd(b.mat.product); isoId=used.isoId; uids=used.usageIds||[]; const tot=+used.kg||matTotal();
     ops=uids.map(id=>({col:COL.usage,merge:true,data:{id,customer:cust,jnfamLot:jl,updatedBy:who(),updatedAt:now}}));
-    ops.push({col:COL.isos,merge:true,data:{id:isoId,status:'출하완료',shipDate,tankNo,customer:cust,jnfamLot:jl,updatedBy:who(),updatedAt:now}});
-    h={id:uid('h'),tsMs:Date.now(),ts:now,user:who()||'-',userName:currentUser?(currentUser.displayName||''):'',action:'ISO 출하',kind:'out',col:COL.isos,docId:isoId,product:ip?ip.key:'',
-      summary:`${ip?ip.name:''} · ${tankNo||'ISO'} · ${fmt(tot)} kg → ${cust||'-'} · ${shipDate} · Batch Sheet ${b.mat.batchId}`,changes:[]};
-  } else {
-    const r=buildUseOps(b,'출하완료',{shipDate}); ops=r.ops; isoId=r.isoId; uids=r.uids; tot=r.tot; h=r.h; ip=r.ip;
-  }
-  /* 완료 = 출하: ISO 탱크는 출하완료로, 수불부 출고 등록/연결 */
-  const lk=ledKey(), L=ledState(); let outId='', outCreated=false; const ledOps=[]; let ledLog=null;
-  if(lk&&!state.outErr){
-    if(L.link){ const o=state.outbound.find(x=>x.id===L.link); outId=o.id;
-      ledOps.push({col:COL.out,merge:true,data:{id:o.id,src:'inventory',invIsoId:isoId,batchSheetId:b.id,updatedBy:who(),updatedAt:now}});
-      ledLog={action:'출고 연결 (Batch Sheet)',kind:'upd',o}; }
-    else { const price=+L.price||0; outId=uid('out'); outCreated=true;
-      const o={id:outId,category:'Goods Issue',item:lk.item,purity:lk.purity,pack:'ISO',buyer:L.buyer,date:shipDate,qty:r2(tot),price,amount:r2(tot*price),shuttle:0,
-        note:[jl,tankNo?'ISO '+tankNo:'',`Batch ${b.mat.batchId}`].filter(Boolean).join(' / '),inCode:'',src:'inventory',invUsageIds:[],invIsoId:isoId,batchSheetId:b.id,...base};
-      ledOps.push({col:COL.out,data:o});
-      const M=state.ledgerMaster; if(M&&L.buyer&&!(M.buyers||[]).includes(L.buyer)) ledOps.push({col:COL.lcfg,merge:true,data:{id:'app',master:{...M,buyers:[...(M.buyers||[]),L.buyer]}}});
-      ledLog={action:'출고 등록 (Batch Sheet)',kind:'add',o}; }
-  }
-  if(outId) ops[ops.length-1].data.outboundId=outId;
-  const commit=writeOps;
-  if(true){
-    try{ await commit([...ops,...ledOps]); }
-    catch(e){
-      if(e.code==='permission-denied'&&ledOps.length){
-        if(!confirm('수불부 출고 쓰기 권한이 없어 수불부 반영에 실패했습니다.\n재고(ISO 충전·출하)만 등록할까요? (나중에 재고 현황 › ISO 탱크에서 “수불부 반영” 가능)')) throw new Error('취소됨');
-        const isoOp=ops[ops.length-1]; delete isoOp.data.outboundId; await commit(ops); outId=''; outCreated=false; ledLog=null;
-      } else throw e;
-    }
-    await logInv(h);
-    if(ledLog&&fb){ try{ const o=ledLog.o; const lh={id:uid('h'),tsMs:Date.now(),ts:now,user:who()||'-',userName:currentUser?(currentUser.displayName||''):'',action:ledLog.action,kind:ledLog.kind,col:'outbound',docId:o.id,
-      summary:`${o.item} ${(+o.purity*100).toFixed(2)}% → ${o.buyer||''} · ${fmt(o.qty)} kg · ${dstr(o.date)} (Batch ${b.mat.batchId})`,changes:[]}; await fb.setDoc(fb.doc(fb.db,COL.lhist,lh.id),lh); }catch(e){ console.warn(e); } }
-  }
-  return {isoId,uids,outId,outCreated,viaUse:!!used,buyer:outCreated?L.buyer:((state.outbound.find(x=>x.id===outId)||{}).buyer||'')};
+    ops.push({col:COL.isos,merge:true,data:{id:isoId,tankNo,customer:cust,jnfamLot:jl,updatedBy:who(),updatedAt:now}});
+    h={id:uid('h'),tsMs:Date.now(),ts:now,user:who()||'-',userName:currentUser?(currentUser.displayName||''):'',action:'ISO 수정',kind:'upd',col:COL.isos,docId:isoId,product:ip?ip.key:'',
+      summary:`${ip?ip.name:''} · ${tankNo||'ISO'} · ${fmt(tot)} kg · ${cust||'-'} · ${jl} · Batch Sheet ${b.mat.batchId} 작성 완료 (대기)`,changes:[]};
+  } else { const r=buildUseOps(b,'대기'); ops=r.ops; isoId=r.isoId; uids=r.uids; h=r.h; }
+  await writeOps(ops); await logInv(h);
+  return {isoId,uids,viaUse:!!used};
 }
 async function complete(){
   const b=cur; if(locked()) return;
@@ -708,18 +680,15 @@ async function complete(){
   const dup=state.batches.find(x=>x.id!==b.id&&x.status==='완료'&&x.mat&&x.mat.batchId===b.mat.batchId); if(dup){ toast('같은 Batch ID로 완료된 배치가 이미 있습니다'); return; }
   const rm=remMap(b.id); const over=matRows().filter(r=>{ const l=state.lots.find(x=>x.id===r.lotId); return l&&r.kg>lotRem(l,rm)+0.01; });
   const miss=STEPS.slice(0,7).filter((s,i)=>{ const [a,t]=stepProg(i); return a<t; });
-  const lk=ledKey(), L=ledState(), linkO=L.link?state.outbound.find(o=>o.id===L.link):null;
-  if(lk&&!state.outErr&&!linkO){ if(!L.buyer){ toast('수불부 판매처를 선택하세요 (완료 화면 하단)'); return; } if(!(+L.price)&&!confirm('단가가 비어 있습니다. 수불부에 금액 $0으로 등록할까요?')) return; }
-  let msg=`${b.mat.batchId} 작성을 완료할까요?\n\n`+(isUsed()?`사용 등록된 ISO 탱크(${fmt(b.mat.used.kg)} kg)가 출하완료(${shipDateOf()})로 전환됩니다.`:`재고 현황 시스템에 ${fmt(matTotal())} kg ISO 충전 + 출하완료(${shipDateOf()})가 등록됩니다.`);
-  if(lk&&!state.outErr) msg+=linkO?`\n수불부: 기존 출고(${dstr(linkO.date)} ${linkO.buyer} ${fmt(linkO.qty)} kg)와 연결`:`\n수불부: ${L.buyer} · ${fmt(matTotal())} kg 출고 등록`;
-  if(shipDateOf()>today()) msg+=`\n⚠ Ship Date(${shipDateOf()})가 오늘 이후입니다 — 출하 예정일로 등록됩니다`;
+  let msg=`${b.mat.batchId} 작성을 완료할까요?\n\n`+(isUsed()?`사용 등록된 ISO 탱크(${fmt(b.mat.used.kg)} kg)는 대기 상태로 유지됩니다.`:`재고 현황 시스템에 ${fmt(matTotal())} kg ISO 충전 + ISO 탱크(대기)가 등록됩니다.`)
+    +`\n\n출하·수불부 출고는 실제 출하 시 재고 현황 › ISO 탱크 › “출하 처리”에서 하세요.`;
   if(miss.length) msg+=`\n\n⚠ 미입력 단계: ${miss.join(', ')}`; if(!matPass()) msg+=`\n⚠ Material 합계 Fail`; if(over.length) msg+=`\n⚠ 현재고 초과 Lot: ${over.map(r=>r.sourceLot).join(', ')}`;
   if(!confirm(msg)) return;
   let spMode=cfgSpReady()?'sp':'download';
   if(spMode==='sp'&&!useRelay()){ try{ await msToken(); }catch(e){ if(!confirm('Microsoft 로그인 실패: '+(e.message||e)+'\n\nSharePoint 저장 없이 완료하고 PDF는 다운로드할까요?')) return; spMode='download'; } }
   busy(true,'재고 현황 시스템에 등록 중…');
   try{
-    if(!b.done.invIsoId){ const r=await registerInventory(); b.done.invIsoId=r.isoId; b.done.invUsageIds=r.uids; b.done.invOutboundId=r.outId||''; b.done.invOutCreated=!!r.outCreated; b.done.ledBuyer=r.buyer||''; b.done.viaUse=!!r.viaUse; }
+    if(!b.done.invIsoId){ const r=await registerInventory(); b.done.invIsoId=r.isoId; b.done.invUsageIds=r.uids; b.done.viaUse=!!r.viaUse; }
     b.status='완료'; b.done.at=nowLocal(); b.done.by=who(); await saveNow();
     busy(false); render();
     await makePdf(spMode);
@@ -727,32 +696,16 @@ async function complete(){
 }
 async function reopen(){
   const b=cur; const iso=state.isos.find(i=>i.id===b.done.invIsoId);
-  if(iso&&iso.status!=='대기'&&iso.batchSheetId!==b.id){ toast('ISO 탱크가 이미 출하 처리되어 되돌릴 수 없습니다. 재고 현황 시스템에서 먼저 처리하세요.',5000); return; }
-  const oid=b.done.invOutboundId||(iso&&iso.outboundId)||''; const ob=oid?(state.outbound.find(o=>o.id===oid)||{id:oid,item:'',purity:0,qty:0,date:'',buyer:''}):null; const created=!!b.done.invOutCreated&&!!ob;
-  if(!confirm((b.done.viaUse&&b.mat.used?'완료를 취소하고 ISO 탱크를 대기 상태로 되돌릴까요? (재고 사용 등록은 유지)':'완료를 취소하고 재고 현황 시스템의 ISO 충전 기록과 ISO 탱크를 삭제할까요?')+(ob?(created?'\n수불부 출고도 함께 삭제됩니다.':'\n연결했던 수불부 출고는 연결만 해제됩니다 (수량 그대로).'):'')+'\n(SharePoint에 저장된 PDF는 그대로 남습니다)')) return;
+  if(iso&&iso.status!=='대기'){ toast(`ISO 탱크가 재고 현황에서 이미 ${iso.status} 처리되어 완료 취소할 수 없습니다. 재고 현황에서 출하를 먼저 되돌리세요.`,6000); return; }
+  const keep=!!(b.done.viaUse&&b.mat.used);
+  if(!confirm((keep?'완료를 취소할까요? (재고 사용 등록과 ISO 탱크(대기)는 그대로 유지)':'완료를 취소하고 재고 현황 시스템의 ISO 충전 기록과 ISO 탱크(대기)를 삭제할까요? (IBC 재고 복원)')+'\n(SharePoint에 저장된 PDF는 그대로 남습니다)')) return;
   busy(true,'되돌리는 중…');
-  if(b.done.viaUse&&b.mat.used){ /* 사용 등록 유지: ISO만 대기로 되돌리고 수불부 출고 해제 */
-    try{ const now=new Date().toISOString(); const list=[{col:COL.isos,merge:true,data:{id:b.done.invIsoId,status:'대기',shipDate:'',outboundId:'',updatedBy:who(),updatedAt:now}}];
-      if(ob){ if(created) list.push({col:COL.out,del:true,data:{id:ob.id}}); else list.push({col:COL.out,merge:true,data:{id:ob.id,src:'',invIsoId:'',batchSheetId:'',updatedBy:who(),updatedAt:now}}); }
-      await writeOps(list);
-      if(ob&&fb){ try{ const lh={id:uid('h'),tsMs:Date.now(),ts:now,user:who(),userName:currentUser?.displayName||'',action:created?'출고 삭제 (Batch Sheet 완료 취소)':'출고 연결 해제 (Batch Sheet 완료 취소)',kind:created?'del':'upd',col:'outbound',docId:ob.id,
-        summary:`${ob.item} ${(+ob.purity*100).toFixed(2)}% → ${ob.buyer||''} · ${fmt(ob.qty)} kg · ${dstr(ob.date)} (Batch ${b.mat.batchId})`,changes:[]}; await fb.setDoc(fb.doc(fb.db,COL.lhist,lh.id),lh); }catch(e){} }
-      await logInv({id:uid('h'),tsMs:Date.now(),ts:now,user:who(),userName:currentUser?.displayName||'',action:'ISO 수정',kind:'upd',col:COL.isos,docId:b.done.invIsoId,product:(invProd(b.mat.product)||{}).key||'',summary:`Batch Sheet ${b.mat.batchId} 완료 취소 · ISO 출하완료 → 대기 (재고 사용 등록 유지)`,changes:[{f:'status',label:'상태',from:'출하완료',to:'대기'}]});
-      b.status='작성중'; b.done={author:b.done.author,pdfName:b.done.pdfName||'',spUrl:b.done.spUrl||'',led:b.done.led||{buyer:'',price:'',link:''}}; b.reopenedAt=now; b.reopenedBy=who();
-      await saveNow(); toast('완료가 취소되었습니다 (재고 사용 등록은 유지)'); }
-    catch(e){ toast('실패: '+(e.code||e.message)); }
-    busy(false); render(); return;
-  }
-  try{ const ids=b.done.invUsageIds||state.usage.filter(u=>u.batchSheetId===b.id).map(u=>u.id);
-    if(fb){ const bt=fb.writeBatch(fb.db); ids.forEach(id=>bt.delete(fb.doc(fb.db,COL.usage,id))); if(b.done.invIsoId) bt.delete(fb.doc(fb.db,COL.isos,b.done.invIsoId));
-      if(ob){ if(created) bt.delete(fb.doc(fb.db,COL.out,ob.id)); else bt.set(fb.doc(fb.db,COL.out,ob.id),{src:'',invIsoId:'',batchSheetId:'',updatedBy:who(),updatedAt:new Date().toISOString()},{merge:true}); }
-      await bt.commit();
-      if(ob){ try{ const lh={id:uid('h'),tsMs:Date.now(),ts:new Date().toISOString(),user:who(),userName:currentUser?.displayName||'',action:created?'출고 삭제 (Batch Sheet 완료 취소)':'출고 연결 해제 (Batch Sheet 완료 취소)',kind:created?'del':'upd',col:'outbound',docId:ob.id,
-        summary:`${ob.item} ${(+ob.purity*100).toFixed(2)}% → ${ob.buyer||''} · ${fmt(ob.qty)} kg · ${dstr(ob.date)} (Batch ${b.mat.batchId})`,changes:[]}; await fb.setDoc(fb.doc(fb.db,COL.lhist,lh.id),lh); }catch(e){} }
-      try{ const h={id:uid('h'),tsMs:Date.now(),ts:new Date().toISOString(),user:who(),userName:currentUser?.displayName||'',action:'ISO 삭제',kind:'del',col:COL.isos,docId:b.done.invIsoId||'',product:(invProd(PK())||{}).key||'',summary:`Batch Sheet ${b.mat.batchId} 완료 취소 · ISO 충전 ${ids.length}건 삭제(IBC 복원)`,changes:[]}; await fb.setDoc(fb.doc(fb.db,COL.hist,h.id),h); }catch(e){} }
-    else { state.usage=state.usage.filter(u=>!ids.includes(u.id)); state.isos=state.isos.filter(i=>i.id!==b.done.invIsoId); if(ob&&created) state.outbound=state.outbound.filter(o=>o.id!==ob.id); }
-    b.status='작성중'; b.done={author:b.done.author,pdfName:b.done.pdfName||'',spUrl:b.done.spUrl||'',led:b.done.led||{buyer:'',price:'',link:''}}; b.reopenedAt=new Date().toISOString(); b.reopenedBy=who();
-    await saveNow(); toast('완료가 취소되었습니다'); }
+  try{ const now=new Date().toISOString();
+    if(!keep){ const ids=b.done.invUsageIds||state.usage.filter(u=>u.batchSheetId===b.id).map(u=>u.id);
+      await writeOps([...ids.map(id=>({col:COL.usage,del:true,data:{id}})),...(b.done.invIsoId?[{col:COL.isos,del:true,data:{id:b.done.invIsoId}}]:[])]);
+      await logInv({id:uid('h'),tsMs:Date.now(),ts:now,user:who(),userName:currentUser?.displayName||'',action:'ISO 삭제',kind:'del',col:COL.isos,docId:b.done.invIsoId||'',product:(invProd(b.mat.product)||{}).key||'',summary:`Batch Sheet ${b.mat.batchId} 완료 취소 · ISO 충전 ${ids.length}건 삭제(IBC 복원)`,changes:[]}); }
+    b.status='작성중'; b.done={author:b.done.author,pdfName:b.done.pdfName||'',spUrl:b.done.spUrl||'',led:b.done.led||{buyer:'',price:'',link:''}}; b.reopenedAt=now; b.reopenedBy=who();
+    await saveNow(); toast(keep?'완료가 취소되었습니다 (재고 사용 등록 유지)':'완료가 취소되었습니다'); }
   catch(e){ toast('실패: '+(e.code||e.message)); }
   busy(false); render();
 }
@@ -961,10 +914,6 @@ function startListeners(fsM,db){
       if(k==='batches'&&cur){ const s=state[k].find(x=>x.id===cur.id); if(s&&s.status==='완료'&&cur.status!=='완료'){ cur=ensure(s); } }
       done(k); if(state.loaded&&!(document.activeElement&&document.activeElement.dataset&&document.activeElement.dataset.k)) render(); },onErr(k)));
   });
-  /* 수불부 출고·판매처 (완료 = 출하 연동용) — 실패해도 배치 작성에는 영향 없음 */
-  unsubs.push(fsM.onSnapshot(fsM.collection(db,COL.out),snap=>{ state.outbound=snap.docs.map(d=>({id:d.id,...d.data()})); state.outErr=null; if(state.view==='edit'&&state.step===7&&!(document.activeElement&&document.activeElement.dataset&&document.activeElement.dataset.k)) render(); },
-    err=>{ state.outErr=err.code==='permission-denied'?'수불부 출고(outbound) 읽기 권한이 없습니다':'수불부 출고 오류: '+err.code; console.warn('outbound',err); }));
-  unsubs.push(fsM.onSnapshot(fsM.doc(db,COL.lcfg,'app'),d=>{ state.ledgerMaster=d.exists()?(d.data().master||null):null; },err=>console.warn('ledger config',err)));
   unsubs.push(fsM.onSnapshot(fsM.doc(db,COL.cfg,'main'),s=>{ if(s.exists()){ const d=s.data(); state.cfg={...JSON.parse(JSON.stringify(DEF_CFG)),...d,ms:{...DEF_CFG.ms,...(d.ms||{})}}; ['clientId','tenantId','shareUrl'].forEach(k=>{ if(!state.cfg.ms[k]) state.cfg.ms[k]=DEF_CFG.ms[k]; }); } if(state.cfg.ms.clientId) msalInit(); if(state.view==='settings'||state.loaded) render(); },err=>console.warn('cfg',err)));
 }
 async function googleLogin(){ try{ const p=new AUM.GoogleAuthProvider(); p.setCustomParameters({prompt:'select_account'}); await AUM.signInWithPopup(auth,p); }catch(e){ if(!/popup-closed|cancelled/.test(e.code||'')) $('loginMsg').textContent='로그인 실패: '+(e.code||e.message); } }
