@@ -262,6 +262,8 @@ const PK=()=>cur.mat.product, PD=()=>PROD[cur.mat.product]||PROD.HF;
 const locked=()=>cur&&cur.status==='완료';
 /* (7) Connector 확인은 출하일에 하므로 배치 완료(잠금) 후에도 입력 가능 */
 const ro=p=>locked()&&!String(p||'').startsWith('s7.');
+/* (7) Connector 확인은 HF만 해당 (HCl·HNO3는 단계 없음) */
+const hasS7=b=>{ b=b||cur; return !!b&&(PROD[b.mat.product]||PROD.HF).name==='HF'; };
 /* (7) 고객별 규격 */
 const connList=()=>(state.cfg.connSpec&&state.cfg.connSpec.length?state.cfg.connSpec:DEF_CFG.connSpec);
 function guessConn(c){ const l=connList(); c=String(c||''); if(!c) return '';
@@ -298,7 +300,7 @@ function stepProg(i,b){ b=b||cur; const c=[];
   if(i===4){ c.push(!!b.s4.start,!!b.s4.end); matRows(b).forEach((r,j)=>c.push(!!b.s4.chk[j])); }
   if(i===5){ c.push(!!b.s5.start,!!b.s5.end,...VALVE_OPEN.map(v=>!!b.s5.open[v]),...VALVE_CLOSE.map(v=>!!b.s5.close[v]),S(b.s5.sig),!!b.s5.start2,!!b.s5.end2); ibcSeq(b).forEach((r,j)=>c.push(!!b.s5.ibcChk[j])); }
   if(i===6){ c.push(!!b.s6.start,!!b.s6.end,!!b.s6.ctrl,b.s6.airP!=='',b.s6.isoP!=='',S(b.s6.sig1),...AF_OPEN.map(v=>!!b.s6.open[v]),...AF_CLOSE.map(v=>!!b.s6.close[v]),S(b.s6.sig)); }
-  if(i===7){ const s=b.s7; c.push(!!s7Ship(b),!!s7Iso(b),!!s7Cust(b),!!s.poNo,!!s.liquid,!!s.gas,s.actualP!=='',!!s.handle,!!s.bolt,!!s.nozzle,S(s.operator),S(s.supervisor),!!s.approval); }
+  if(i===7&&hasS7(b)){ const s=b.s7; c.push(!!s7Ship(b),!!s7Iso(b),!!s7Cust(b),!!s.poNo,!!s.liquid,!!s.gas,s.actualP!=='',!!s.handle,!!s.bolt,!!s.nozzle,S(s.operator),S(s.supervisor),!!s.approval); }
   if(i===8){ c.push(S(b.done.author)); }
   return [c.filter(Boolean).length,c.length];
 }
@@ -338,7 +340,7 @@ function render(){
   else if(state.view==='settings') m.innerHTML=vSettings();
   else if(state.view==='edit'&&cur){ m.innerHTML=[vMat,vPPE,vS2,vS3,vS4,vS5,vS6,vS7,vDone][state.step]()+navBar(); window.scrollTo(0,y); }
 }
-function renderSteps(){ $('stepsBar').innerHTML=STEPS.map((s,i)=>{ const [a,t]=stepProg(i); return `<button class="step ${state.step===i?'on':''}" onclick="app.step(${i})">${s}<span class="cnt ${a===t?'full':''}">${a}/${t}</span></button>`; }).join(''); }
+function renderSteps(){ $('stepsBar').innerHTML=STEPS.map((s,i)=>{ if(i===7&&!hasS7()) return ''; const [a,t]=stepProg(i); return `<button class="step ${state.step===i?'on':''}" onclick="app.step(${i})">${s}<span class="cnt ${a===t?'full':''}">${a}/${t}</span></button>`; }).join(''); }
 const navBar=()=>`<div class="navbar"><button class="btn" ${state.step===0?'disabled':''} onclick="app.step(${state.step-1})">← 이전</button>${state.step<8?`<button class="btn pri" onclick="app.step(${state.step+1})">다음 →</button>`:''}</div>`;
 
 function vList(){
@@ -563,7 +565,7 @@ function vDone(){ const b=cur, pd=PD(), w=weigh(), tot=matTotal();
   const warn=[]; if(!matPass()) warn.push(`Material 합계 ${fmt(tot)} kg — Fail (기준 ${fmt(state.cfg.passMin)}~${fmt(state.cfg.passMax)})`);
   if(w&&!w.pass) warn.push('Weighbridge Balance Fail'); if(w&&!w.safe) warn.push('계근 판정: 위험 투입 검토 필요');
   const ms=state.cfg.ms||{}; const spOk=!!(ms.clientId&&ms.shareUrl);
-  const [s7a,s7t]=stepProg(7); const s7note=(b.s7.editedAfterDone?`<div class="banner warn"><b>(7) Connector 확인이 완료 후 수정되었습니다</b> (${esc(dt(b.s7.editedAfterDone))}) — 아래에서 PDF를 다시 저장하세요</div>`:'')
+  const [s7a,s7t]=stepProg(7); const s7note=!hasS7(b)?'':(b.s7.editedAfterDone?`<div class="banner warn"><b>(7) Connector 확인이 완료 후 수정되었습니다</b> (${esc(dt(b.s7.editedAfterDone))}) — 아래에서 PDF를 다시 저장하세요</div>`:'')
     +(s7a<s7t?`<div class="banner blue">(7) Connector 확인 ${s7a}/${s7t} — 출하 시 <a href="#" onclick="app.step(7);return false">(7) 단계</a>에서 입력하세요</div>`:'')
     +(!(b.s7.photos||[]).length?'<div class="banner warn">⚠ Connector 확인 사진이 없습니다</div>':'');
   if(locked()) return `<div class="card"><h2>작성 완료 <span class="pill ok">완료</span></h2>${s7note}
@@ -579,7 +581,7 @@ function vDone(){ const b=cur, pd=PD(), w=weigh(), tot=matTotal();
       <b>Customer</b><span>${esc(b.mat.customer)}</span><b>투입량</b><span>${fmt(tot)} kg (${matRows().map(r=>`${esc(r.sourceLot)} ${r.cnt}`).join(', ')})</span></div>
     ${miss.length?`<div class="banner warn"><b>미입력 항목</b><br>${miss.map(esc).join('<br>')}</div>`:'<div class="banner ok">모든 체크 항목이 입력되었습니다</div>'}
     ${warn.length?`<div class="banner bad">${warn.map(esc).join('<br>')}</div>`:''}
-    ${!(b.s7.photos||[]).length?'<div class="banner warn">⚠ Connector 확인 사진이 없습니다 (선택 사항 — 출하 시 완료 후에도 추가 가능)</div>':''}
+    ${hasS7(b)&&!(b.s7.photos||[]).length?'<div class="banner warn">⚠ Connector 확인 사진이 없습니다 (선택 사항 — 출하 시 완료 후에도 추가 가능)</div>':''}
     <div class="chk-row"><div class="lb">작성자 서명</div><div></div>${sig('done.author','작성자 선택')}</div>
     <div class="banner blue" style="margin-top:12px">작성 완료를 누르면<br>① 재고 현황 시스템에 Lot별 "ISO 충전" 차감 + ISO 탱크(<b>대기</b>) 생성 (사용 등록했으면 그대로 유지)<br>② 출하·수불부 출고는 <b>실제 출하 시</b> 재고 현황 › ISO 탱크 › “출하 처리”에서 진행<br>③ PDF 생성 → ${spOk?'SharePoint Batch Sheet 폴더에 저장':'<b>SharePoint 미설정 — PDF 다운로드만 됩니다 (설정 탭)</b>'}<br>④ 배치는 읽기 전용으로 잠깁니다</div>
     <div class="row" style="margin-top:12px"><button class="btn" onclick="app.pdf('preview')">PDF 미리보기</button><button class="btn ok" onclick="app.complete()">작성 완료 → ISO 충전 등록 + PDF 저장</button>
@@ -920,8 +922,8 @@ function pdfPages(b){ ensure(b); const pd=PROD[b.mat.product]||PROD.HF, w=weigh(
   <tr><th>기록 계정</th><td colspan="3">${esc(b.done.by||b.updatedBy||'')}</td></tr></table>`);
   /* P6 (7) ISO Tank Connector 확인 */
   const s7=b.s7, sp=s7Spec(b), pok=s7PressOK(b), YN=v=>v?`<span class="${v==='N'||v==='NG'?'fail':'pass'}">${esc(v)}</span>`:'';
-  const ps7=s7.photos||[];
-  pages.push(`${pdfHeader('ISO Tank Connector Check Sheet',b)}${pdfInfo(b)}
+  const ps7=hasS7(b)?(s7.photos||[]):[];
+  if(hasS7(b)) pages.push(`${pdfHeader('ISO Tank Connector Check Sheet',b)}${pdfInfo(b)}
   <h2>(7) ISO Tank Connector 확인 (출하 시)</h2>
   <table><tr><th style="width:34%">항목</th><th style="width:40%">설정</th><th>결과</th></tr>
   <tr><td>Shipment Date</td><td></td><td class="c">${esc(s7Ship(b))}</td></tr>
@@ -1070,7 +1072,7 @@ function loadDemo(){
 window.app={
   useStock, unuse,
   go(v){ if(cur) saveNow(); state.view=v; if(v!=='edit') cur=null; window.scrollTo(0,0); render(); },
-  step(i){ state.step=Math.max(0,Math.min(8,i)); window.scrollTo(0,0); render(); },
+  step(i){ if(i===7&&cur&&!hasS7()) i=state.step>7?6:8; state.step=Math.max(0,Math.min(8,i)); window.scrollTo(0,0); render(); },
   listF(f){ state.listF=f; render(); },
   newBatch(){ cur=newBatch(); cur.mat.batchId=nextBatchId(cur.mat.product,cur.mat.mfgDate); cur.mat.prodId=nextProdId(cur.mat.product,cur.mat.shipDate); cur.mat.lots=autoAlloc(cur.mat.product).rows; state.view='edit'; state.step=0; saveNow(); window.scrollTo(0,0); render(); },
   open(id){ const b=state.batches.find(x=>x.id===id); if(!b) return; cur=ensure(JSON.parse(JSON.stringify(b))); state.view='edit'; state.step=cur.status==='완료'?8:0; window.scrollTo(0,0); render(); },
