@@ -89,6 +89,16 @@ table.t td.num,table.t th.num{text-align:right;font-variant-numeric:tabular-nums
 
 /* ---------- PDF 출력용 (화면 밖) ---------- */
 #printArea{position:fixed;left:-10000px;top:0}
+.ph-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:10px}
+.ph{position:relative;aspect-ratio:4/3;border-radius:10px;overflow:hidden;background:#eef1f5;border:1px solid var(--line);cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--mut);font-size:13px}
+.ph img{width:100%;height:100%;object-fit:cover;display:block}
+.ph .x{position:absolute;top:6px;right:6px;width:34px;height:34px;border-radius:50%;border:none;background:rgba(0,0,0,.6);color:#fff;font-size:18px;font-weight:700;cursor:pointer}
+.ph .cap{position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);color:#fff;font-size:11px;padding:3px 6px}
+.ph-btns{display:flex;gap:10px;flex-wrap:wrap}
+.ph-btns .btn{min-height:52px;font-size:16px}
+.pg .phs{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.pg .phc{border:1px solid #000;height:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4px}
+.pg .phc div{font-size:9px;color:#333;margin-top:3px}
 .pg{width:794px;min-height:1123px;background:#fff;color:#000;padding:36px 40px;font-family:"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",Arial,sans-serif;font-size:11px;line-height:1.35}
 .pg h1{font-size:20px;text-align:center;margin:0;padding:8px;border:1.5px solid #000;letter-spacing:2px}
 .pg h2{font-size:13px;margin:14px 0 6px;padding:4px 6px;background:#e5e7eb;border:1px solid #000}
@@ -133,7 +143,8 @@ table.t td.num,table.t th.num{text-align:right;font-variant-numeric:tabular-nums
    - 원본: JNFAM_Batch_Sheet_R2 (Materials + Production 시트)
    - Firestore (jnfam-ledger 프로젝트, 재고 현황 시스템과 공유)
        batch_sheets   : 배치시트 문서 (작성중/완료)
-       batch_config   : main 문서 — 작업자 명단, SharePoint 설정, 기준값
+       batch_config   : main 문서 — 작업자 명단, SharePoint 설정, 기준값, (7) Connector 규격
+       batch_photos   : (7) Connector 확인 사진 (기기에서 압축한 JPEG, 문서 1장당 1MB 미만)
        inv_lots / inv_usage / inv_isos / inv_products : 재고 현황 시스템 (읽기 + 완료 시 ISO 충전 등록)
        (수불부 출고는 Batch Sheet에서 하지 않음 — 재고 현황 › ISO 탱크 › 출하 처리 시 등록)
    - 사용 등록: Material 단계에서 재고 선차감(ISO 충전 + ISO 대기) → 다른 배치에 같은 재고 배정 방지, 삭제·사용취소 시 복원
@@ -142,7 +153,7 @@ table.t td.num,table.t th.num{text-align:right;font-variant-numeric:tabular-nums
 const FB_CFG={apiKey:"AIzaSyDB1-k-Xp98Sw3mx2AM3AxROo-Y4_4FZoY",authDomain:"jnfam-ledger.firebaseapp.com",projectId:"jnfam-ledger",
   storageBucket:"jnfam-ledger.firebasestorage.app",messagingSenderId:"656610691213",appId:"1:656610691213:web:1d03f91bd8dd36b2283ac4"};
 const FB_URL='https://www.gstatic.com/firebasejs/10.12.2/';
-const COL={batch:'batch_sheets',cfg:'batch_config',products:'inv_products',lots:'inv_lots',usage:'inv_usage',isos:'inv_isos',hist:'inv_history',out:'outbound',lcfg:'config',lhist:'history'};
+const COL={photos:'batch_photos',batch:'batch_sheets',cfg:'batch_config',products:'inv_products',lots:'inv_lots',usage:'inv_usage',isos:'inv_isos',hist:'inv_history',out:'outbound',lcfg:'config',lhist:'history'};
 const DEMO=new URLSearchParams(location.search).has('demo')||location.protocol==='file:';
 const DEFAULT_SHARE='https://jnfam.sharepoint.com/:f:/s/JNFAM/IgBZz-QhlluJRLK0n6we7ihLAcHkIf2hwlshHrU8WZVRHy8?e=ASFJPA';
 
@@ -158,11 +169,15 @@ const PPE_ITEMS=[['goggle','보호안경'],['tyvek','Tyvac'],['glove','보호장
 const QC_ITEMS=['ISO Tank Valve check & open','Filling Room Quick 체결','ISO Ventilation Quick check & open','ISO Tank Operation Pressure check (0.5±0.1 bar)'];
 const VALVE_OPEN=['00','20','01','03','04','05','06','11','14'], VALVE_CLOSE=['02','07','08','09','10','12','13'];
 const AF_OPEN=['00','20','10','14'], AF_CLOSE=['08','11','13'];
-const STEPS=['Material','(1) PPE','(2) RM & ISO','(3) 설비 점검','(4) 투입 전 확인','(5) Valve · 투입','(6) Air Flushing','완료'];
+const STEPS=['Material','(1) PPE','(2) RM & ISO','(3) 설비 점검','(4) 투입 전 확인','(5) Valve · 투입','(6) Air Flushing','(7) Connector 확인','완료'];
 const DEF_CFG={workers:[],customers:['HWQ CTSV'],isoTanks:[{no:'240003 (7)',prod:'HF'},{no:'240002(1)',prod:'HF'},{no:'240004 (2)',prod:'HNO3'},{no:'240001 (6)',prod:'HCl'}],passMin:18200,passMax:19000,maxKg:19000,weighDangerLb:40000,weighPassLb:500,
+  /* (7) ISO Tank Connector 확인 — 엑셀 ISO_Tank_Shipment_Check_Sheet 기준 고객별 규격 */
+  connSpec:[{cust:'Qcells',liquid:'50A',gas:'20A',handle:'40A 밸브 손잡이 제거',nozzle:'50A 노즐 Rear 장착 확인'},
+            {cust:'PVJC',liquid:'40A',gas:'25A',handle:'50A 밸브 손잡이 제거',nozzle:'40A 노즐 Rear 장착 확인'}],targetBar:5,
   ms:{clientId:'4483db59-77c7-4277-a795-540aaf732c5b',tenantId:'9e2f9e87-0f8e-4b71-87d4-c0b36430e0a6',shareUrl:DEFAULT_SHARE,driveId:'',itemId:'',folderName:'',relayUrl:''}};
 
 const state={batches:[],products:[],lots:[],usage:[],isos:[],outbound:[],outErr:null,ledgerMaster:null,cfg:JSON.parse(JSON.stringify(DEF_CFG)),loaded:false,view:'list',step:0,listF:'active'};
+const photoCache={}; const photoLoading=new Set();
 let cur=null, fb=null, AUM=null, auth=null, currentUser=null, unsubs=[], saveT=null;
 
 /* ---------------- 유틸 ---------------- */
@@ -181,7 +196,7 @@ const who=()=>currentUser?currentUser.email:(DEMO?'demo':'');
 const num=v=>(v===''||v==null||isNaN(+v))?null:+v;
 function toast(m,ms=3000){ const t=$('toast'); t.textContent=m; t.style.display='block'; clearTimeout(t._h); t._h=setTimeout(()=>t.style.display='none',ms); }
 function busy(on,msg){ $('busy').style.display=on?'flex':'none'; if(msg) $('busyMsg').textContent=msg; }
-function openModal(html){ $('modalBox').innerHTML=html; $('modalBg').classList.add('open'); }
+function openModal(html){ $('modalBox').style.maxWidth=''; $('modalBox').innerHTML=html; $('modalBg').classList.add('open'); }
 function closeModal(){ $('modalBg').classList.remove('open'); }
 $('modalBg').addEventListener('mousedown',e=>{ if(e.target.id==='modalBg') closeModal(); });
 function getP(o,path){ return path.split('.').reduce((a,k)=>a==null?undefined:a[k],o); }
@@ -239,11 +254,27 @@ function newBatch(){
     s4:{start:'',end:'',chk:{}},
     s5:{start:'',end:'',open:{},close:{},sig:null,act:'',start2:'',end2:'',ibcChk:{},ibcAct:''},
     s6:{start:'',end:'',ctrl:false,airP:'',isoP:'',sig1:null,open:{},close:{},sig:null,act:''},
+    s7:{shipDate:'',isoNo:'',cust:'',poNo:'',liquid:false,gas:false,actualP:'',handle:false,bolt:false,nozzle:false,coa:'',shipPhoto:'',contact:'',operator:null,supervisor:null,approval:'',remarks:'',photos:[],editedAfterDone:''},
     done:{author:null,led:{buyer:'',price:'',link:''}}};
 }
-function ensure(b){ const n=newBatch(); for(const k of Object.keys(n)) if(b[k]==null) b[k]=n[k]; for(const s of ['mat','ppe','s2','s3','s4','s5','s6','done']) for(const k of Object.keys(n[s])) if(b[s][k]==null) b[s][k]=n[s][k]; if(b.status!=='완료') b.mat.isoTank2=''; return b; }
+function ensure(b){ const n=newBatch(); for(const k of Object.keys(n)) if(b[k]==null) b[k]=n[k]; for(const s of ['mat','ppe','s2','s3','s4','s5','s6','s7','done']) for(const k of Object.keys(n[s])) if(b[s][k]==null) b[s][k]=n[s][k]; if(b.status!=='완료') b.mat.isoTank2=''; return b; }
 const PK=()=>cur.mat.product, PD=()=>PROD[cur.mat.product]||PROD.HF;
 const locked=()=>cur&&cur.status==='완료';
+/* (7) Connector 확인은 출하일에 하므로 배치 완료(잠금) 후에도 입력 가능 */
+const ro=p=>locked()&&!String(p||'').startsWith('s7.');
+/* (7) 고객별 규격 */
+const connList=()=>(state.cfg.connSpec&&state.cfg.connSpec.length?state.cfg.connSpec:DEF_CFG.connSpec);
+function guessConn(c){ const l=connList(); c=String(c||''); if(!c) return '';
+  const ex=l.find(x=>x.cust.toLowerCase()===c.toLowerCase()); if(ex) return ex.cust;
+  if(/hwq|q\s*cells|한화/i.test(c)&&l.some(x=>x.cust==='Qcells')) return 'Qcells';
+  if(/pvjc/i.test(c)&&l.some(x=>x.cust==='PVJC')) return 'PVJC';
+  return ''; }
+const s7Cust=b=>{ b=b||cur; return b.s7.cust||guessConn(b.mat.customer); };
+const s7Spec=b=>connList().find(x=>x.cust===s7Cust(b))||null;
+const s7Ship=b=>{ b=b||cur; return b.s7.shipDate||b.mat.shipDate||''; };
+const s7Iso=b=>{ b=b||cur; return b.s7.isoNo||b.mat.isoTank||''; };
+const tgtBar=()=>+state.cfg.targetBar||5;
+const s7PressOK=b=>{ const a=num((b||cur).s7.actualP); return a==null?null:a>=tgtBar(); };
 function matRows(b){ b=b||cur; const pd=PROD[b.mat.product]||PROD.HF;
   return (b.mat.lots||[]).map(r=>{ const l=state.lots.find(x=>x.id===r.lotId)||(r.snap||{}); const unit=num(r.unitKg)??pd.unit; const cnt=num(r.count)||0;
     return {...r,lot:l,sourceLot:l.sourceLot||r.sourceLot||'',unit,cnt,kg:Math.round(unit*cnt*100)/100}; }).filter(r=>r.lotId||r.cnt); }
@@ -267,31 +298,34 @@ function stepProg(i,b){ b=b||cur; const c=[];
   if(i===4){ c.push(!!b.s4.start,!!b.s4.end); matRows(b).forEach((r,j)=>c.push(!!b.s4.chk[j])); }
   if(i===5){ c.push(!!b.s5.start,!!b.s5.end,...VALVE_OPEN.map(v=>!!b.s5.open[v]),...VALVE_CLOSE.map(v=>!!b.s5.close[v]),S(b.s5.sig),!!b.s5.start2,!!b.s5.end2); ibcSeq(b).forEach((r,j)=>c.push(!!b.s5.ibcChk[j])); }
   if(i===6){ c.push(!!b.s6.start,!!b.s6.end,!!b.s6.ctrl,b.s6.airP!=='',b.s6.isoP!=='',S(b.s6.sig1),...AF_OPEN.map(v=>!!b.s6.open[v]),...AF_CLOSE.map(v=>!!b.s6.close[v]),S(b.s6.sig)); }
-  if(i===7){ c.push(S(b.done.author)); }
+  if(i===7){ const s=b.s7; c.push(!!s7Ship(b),!!s7Iso(b),!!s7Cust(b),!!s.poNo,!!s.liquid,!!s.gas,s.actualP!=='',!!s.handle,!!s.bolt,!!s.nozzle,S(s.operator),S(s.supervisor),!!s.approval); }
+  if(i===8){ c.push(S(b.done.author)); }
   return [c.filter(Boolean).length,c.length];
 }
 
 /* ---------------- 저장 ---------------- */
-function touch(){ if(!cur||locked()) return; cur.updatedAt=new Date().toISOString(); cur.updatedBy=who(); clearTimeout(saveT); saveT=setTimeout(saveNow,600); }
+function touch(p){ if(!cur||ro(p)) return; if(locked()) cur.s7.editedAfterDone=nowLocal(); cur.updatedAt=new Date().toISOString(); cur.updatedBy=who(); clearTimeout(saveT); saveT=setTimeout(saveNow,600); }
 async function saveNow(){ clearTimeout(saveT); if(!cur) return; const data=JSON.parse(JSON.stringify(cur));
   if(fb){ try{ await fb.setDoc(fb.doc(fb.db,COL.batch,cur.id),data); }catch(e){ toast('저장 실패: '+(e.code||e.message)); } }
   else { const i=state.batches.findIndex(x=>x.id===cur.id); if(i>=0) state.batches[i]=data; else state.batches.unshift(data); } }
 async function saveCfg(){ const data=JSON.parse(JSON.stringify(state.cfg)); if(fb) await fb.setDoc(fb.doc(fb.db,COL.cfg,'main'),data); toast('설정 저장됨'); }
 
 /* ---------------- 공통 입력 위젯 ---------------- */
-const dis=()=>locked()?'disabled':'';
+const dis=p=>ro(p)?'disabled':'';
 /* 사용 등록(완료 전 재고 선차감): mat.used={isoId,usageIds,kg,at,by} — 재고 현황에서 ISO가 지워지면 stale */
 const usedInfo=b=>{ b=b||cur; const u=b&&b.mat&&b.mat.used; if(!u||!u.isoId) return null; return (fb&&state.loaded&&!state.isos.some(i=>i.id===u.isoId))?{...u,stale:true}:u; };
 const isUsed=b=>{ const u=usedInfo(b); return !!(u&&!u.stale); };
 const matLocked=()=>locked()||isUsed();
 const mdis=()=>matLocked()?'disabled':'';
-const tog=(path,label,cls='')=>{ const on=!!getP(cur,path); return `<button class="tog ${cls} ${on?'on':''}" ${dis()} data-tog="${path}">${on?'✓ ':''}${label??'V'}</button>`; };
-const okno=(path)=>{ const v=getP(cur,path); return `<button class="tog ${v==='OK'?'on':''}" ${dis()} data-set="${path}" data-v="OK">OK</button> <button class="tog no ${v==='NO'?'on':''}" ${dis()} data-set="${path}" data-v="NO">NO</button>`; };
-const sig=(path,label='확인자 서명')=>{ const v=getP(cur,path); return v&&v.n?`<button class="sig on" ${dis()} data-sig="${path}">${esc(v.n)}<small>${esc(dt(v.t))}</small></button>`:`<button class="sig" ${dis()} data-sig="${path}">✍ ${label}</button>`; };
-const inp=(path,type='text',attrs='')=>`<input type="${type}" data-k="${path}" value="${esc(getP(cur,path)??'')}" ${dis()} ${attrs}>`;
-const timeRow=(ps,pe,title)=>`<div class="time-row"><div class="fld"><label>${title||'공정'} 시작 날짜 및 시간</label>${inp(ps,'datetime-local')}</div><button class="btn sm" ${dis()} data-now="${ps}">지금</button>
-  <div class="fld"><label>${title||'공정'} 종료 날짜 및 시간</label>${inp(pe,'datetime-local')}</div><button class="btn sm" ${dis()} data-now="${pe}">지금</button></div>`;
-const act=(path)=>`<div class="fld" style="margin-top:10px"><label>이상발생 시 조치된 사항</label><textarea data-k="${path}" ${dis()} placeholder="없으면 비워두세요">${esc(getP(cur,path)||'')}</textarea></div>`;
+const tog=(path,label,cls='')=>{ const on=!!getP(cur,path); return `<button class="tog ${cls} ${on?'on':''}" ${dis(path)} data-tog="${path}">${on?'✓ ':''}${label??'V'}</button>`; };
+const okno=(path)=>{ const v=getP(cur,path); return `<button class="tog ${v==='OK'?'on':''}" ${dis(path)} data-set="${path}" data-v="OK">OK</button> <button class="tog no ${v==='NO'?'on':''}" ${dis(path)} data-set="${path}" data-v="NO">NO</button>`; };
+/* 선택형 (Y/N, OK/NG): 첫 값=정상, 두번째=이상 */
+const choice=(path,a,b)=>{ const v=getP(cur,path); return `<button class="tog ${v===a?'on':''}" ${dis(path)} data-set="${path}" data-v="${a}">${a}</button> <button class="tog no ${v===b?'on':''}" ${dis(path)} data-set="${path}" data-v="${b}">${b}</button>`; };
+const sig=(path,label='확인자 서명')=>{ const v=getP(cur,path); return v&&v.n?`<button class="sig on" ${dis(path)} data-sig="${path}">${esc(v.n)}<small>${esc(dt(v.t))}</small></button>`:`<button class="sig" ${dis(path)} data-sig="${path}">✍ ${label}</button>`; };
+const inp=(path,type='text',attrs='',fallback)=>{ const v=getP(cur,path); return `<input type="${type}" data-k="${path}" value="${esc((v===''||v==null)&&fallback!=null?fallback:(v??''))}" ${dis(path)} ${attrs}>`; };
+const timeRow=(ps,pe,title)=>`<div class="time-row"><div class="fld"><label>${title||'공정'} 시작 날짜 및 시간</label>${inp(ps,'datetime-local')}</div><button class="btn sm" ${dis(ps)} data-now="${ps}">지금</button>
+  <div class="fld"><label>${title||'공정'} 종료 날짜 및 시간</label>${inp(pe,'datetime-local')}</div><button class="btn sm" ${dis(pe)} data-now="${pe}">지금</button></div>`;
+const act=(path)=>`<div class="fld" style="margin-top:10px"><label>이상발생 시 조치된 사항</label><textarea data-k="${path}" ${dis(path)} placeholder="없으면 비워두세요">${esc(getP(cur,path)||'')}</textarea></div>`;
 
 /* ---------------- 렌더 ---------------- */
 function render(){
@@ -302,10 +336,10 @@ function render(){
   const y=window.scrollY;
   if(state.view==='list') m.innerHTML=vList();
   else if(state.view==='settings') m.innerHTML=vSettings();
-  else if(state.view==='edit'&&cur){ m.innerHTML=[vMat,vPPE,vS2,vS3,vS4,vS5,vS6,vDone][state.step]()+navBar(); window.scrollTo(0,y); }
+  else if(state.view==='edit'&&cur){ m.innerHTML=[vMat,vPPE,vS2,vS3,vS4,vS5,vS6,vS7,vDone][state.step]()+navBar(); window.scrollTo(0,y); }
 }
 function renderSteps(){ $('stepsBar').innerHTML=STEPS.map((s,i)=>{ const [a,t]=stepProg(i); return `<button class="step ${state.step===i?'on':''}" onclick="app.step(${i})">${s}<span class="cnt ${a===t?'full':''}">${a}/${t}</span></button>`; }).join(''); }
-const navBar=()=>`<div class="navbar"><button class="btn" ${state.step===0?'disabled':''} onclick="app.step(${state.step-1})">← 이전</button>${state.step<7?`<button class="btn pri" onclick="app.step(${state.step+1})">다음 →</button>`:''}</div>`;
+const navBar=()=>`<div class="navbar"><button class="btn" ${state.step===0?'disabled':''} onclick="app.step(${state.step-1})">← 이전</button>${state.step<8?`<button class="btn pri" onclick="app.step(${state.step+1})">다음 →</button>`:''}</div>`;
 
 function vList(){
   if(!state.loaded&&!DEMO) return `<div class="card help">불러오는 중…</div>`;
@@ -461,13 +495,78 @@ function vS6(){ const pd=PD(); const a=num(cur.s6.airP);
   ${act('s6.act')}</div>`;
 }
 
-/* ---- Step 7: 완료 ---- */
+/* ---- Step 7: ISO Tank Connector 확인 (출하 시) ---- */
+function vS7(){ const s=cur.s7, sp=s7Spec(), ok=s7PressOK(), ps=s.photos||[], cust=s7Cust();
+  const row=(lb,set,ctl)=>`<div class="chk-row"><div class="lb">${lb}<small>${set}</small></div><div></div><div>${ctl}</div></div>`;
+  const nosp='<span class="pill warn">고객 선택 필요</span>';
+  return `${locked()?`<div class="banner blue">배치는 완료(잠금) 상태이지만 <b>(7) Connector 확인은 출하 때 입력</b>할 수 있습니다. 입력 후 <b>완료</b> 탭에서 PDF를 다시 저장하세요.</div>`:''}
+  <div class="card"><h2>(7) ISO Tank Connector 확인 <span class="help">출하 시</span></h2>
+  <div class="grid">
+    <div class="fld"><label>Shipment Date</label>${inp('s7.shipDate','date','',cur.mat.shipDate||'')}</div>
+    <div class="fld"><label>ISO Tank No. <span class="help">(실제 번호)</span></label>${inp('s7.isoNo','text','',cur.mat.isoTank||'')}</div>
+    <div class="fld"><label>Customer (규격)</label><select data-k="s7.cust" ${dis('s7.cust')}><option value="">— 선택 —</option>${connList().map(x=>`<option ${x.cust===cust?'selected':''}>${esc(x.cust)}</option>`).join('')}</select></div>
+    <div class="fld"><label>PO No.</label>${inp('s7.poNo')}</div>
+  </div>
+  <h3>Connector · Valve</h3>
+  ${row('Liquid connector Check',sp?esc(sp.liquid):nosp,tog('s7.liquid','Check'))}
+  ${row('Gas connector Check',sp?esc(sp.gas):nosp,tog('s7.gas','Check'))}
+  <div class="chk-row"><div class="lb">Actual Pressure (bar)<small>Target &gt; ${tgtBar()} Bar · ${tgtBar()} bar 이상일 때 OK ${ok==null?'':ok?'<span class="pill ok">OK</span>':'<span class="pill bad">NG</span>'}</small></div><div class="fld" style="width:160px">${inp('s7.actualP','number','inputmode="decimal" step="0.01" placeholder="bar"')}</div><div></div></div>
+  ${row('Valve 손잡이 제거',sp?esc(sp.handle):nosp,tog('s7.handle','Check'))}
+  ${row('볼트체결 확인','Tightness &amp; visual (in ISO Tank)',tog('s7.bolt','Check'))}
+  ${row('노즐 위치 확인',sp?esc(sp.nozzle):nosp,tog('s7.nozzle','Check'))}
+  <h3>Connector 확인 사진 <span class="help">(${ps.length}장) 태블릿에서 바로 촬영하거나 갤러리에서 선택</span></h3>
+  <div class="ph-btns"><button class="btn pri" onclick="app.photoPick(true)">📷 촬영</button><button class="btn" onclick="app.photoPick(false)">🖼 갤러리 / 파일</button></div>
+  <div class="ph-grid">${ps.map((p,i)=>{ const d=photoCache[p.id]; if(!d) loadPhoto(p.id);
+    return `<div class="ph" onclick="app.photoView('${p.id}')">${d?`<img src="${d}" alt="">`:'불러오는 중…'}<span class="cap">${i+1} · ${esc(dt(p.at).slice(5))}</span><button class="x" title="삭제" onclick="event.stopPropagation();app.photoDel('${p.id}')">×</button></div>`; }).join('')||'<div class="help">사진 없음 — 사진은 선택 사항이며, 없으면 완료 화면에 경고로 표시됩니다</div>'}</div>
+  <h3>확인 · 승인</h3>
+  <div class="chk-row"><div class="lb">Operator Name</div><div></div>${sig('s7.operator','작업자 선택')}</div>
+  <div class="chk-row"><div class="lb">Supervisor Name</div><div></div>${sig('s7.supervisor','관리자 선택')}</div>
+  ${row('Approval Status (OK/NG)','',choice('s7.approval','OK','NG'))}
+  <div class="fld" style="margin-top:10px"><label>Remarks</label><textarea data-k="s7.remarks" ${dis('s7.remarks')} placeholder="없으면 비워두세요">${esc(s.remarks||'')}</textarea></div>
+  </div>`;
+}
+
+/* ---------------- 사진 (기기에서 촬영 / 갤러리 선택 → 압축 → Firestore batch_photos) ---------------- */
+const PH_MAX=1600, PH_LIMIT=850000; /* Firestore 문서 1MB 제한 안쪽 */
+function loadImg(file){ return new Promise((ok,no)=>{ const u=URL.createObjectURL(file); const im=new Image(); im.onload=()=>{ ok(im); setTimeout(()=>URL.revokeObjectURL(u),1000); }; im.onerror=()=>{ URL.revokeObjectURL(u); no(new Error('이미지를 읽을 수 없습니다 (HEIC는 JPG로 저장 후 선택)')); }; im.src=u; }); }
+async function compressImg(file){ const im=await loadImg(file); let max=PH_MAX, q=0.82, out, w, h;
+  for(let k=0;k<8;k++){ const r=Math.min(1,max/Math.max(im.naturalWidth,im.naturalHeight)); w=Math.round(im.naturalWidth*r); h=Math.round(im.naturalHeight*r);
+    const c=document.createElement('canvas'); c.width=w; c.height=h; const g=c.getContext('2d'); g.fillStyle='#fff'; g.fillRect(0,0,w,h); g.drawImage(im,0,0,w,h);
+    out=c.toDataURL('image/jpeg',q); if(out.length<=PH_LIMIT) break; if(q>0.6) q-=0.1; else max=Math.round(max*0.8); }
+  return {data:out,w,h}; }
+async function loadPhoto(id){ if(photoCache[id]||photoLoading.has(id)||!fb||!fb.getDoc) return; photoLoading.add(id);
+  try{ const s=await fb.getDoc(fb.doc(fb.db,COL.photos,id)); photoCache[id]=s.exists()?s.data().data:''; }catch(e){ console.warn('photo',e); photoCache[id]=''; }
+  photoLoading.delete(id); if(state.view==='edit') render(); }
+async function loadPhotos(b){ await Promise.all(((b.s7&&b.s7.photos)||[]).map(p=>loadPhoto(p.id))); }
+function photoPick(cam){ if(!cur) return; const i=document.createElement('input'); i.type='file'; i.accept='image/*'; if(cam) i.setAttribute('capture','environment'); else i.multiple=true;
+  i.style.display='none'; document.body.appendChild(i); i.onchange=()=>{ const fs=[...(i.files||[])]; i.remove(); if(fs.length) addPhotos(fs); }; i.click(); }
+async function addPhotos(files){ const b=cur; if(!b) return; let n=0;
+  for(let k=0;k<files.length;k++){ busy(true,`사진 처리 중… (${k+1}/${files.length})`);
+    try{ const {data,w,h}=await compressImg(files[k]); const id=uid('ph'), at=nowLocal();
+      if(fb) await fb.setDoc(fb.doc(fb.db,COL.photos,id),{id,batchSheetId:b.id,batchId:b.mat.batchId||'',section:'s7',data,w,h,name:files[k].name||'',at,by:who()});
+      photoCache[id]=data; (b.s7.photos=b.s7.photos||[]).push({id,at,by:who(),w,h}); n++; }
+    catch(e){ console.error(e); toast(e.code==='permission-denied'?'사진 저장 권한 없음 — Firestore 보안 규칙에 batch_photos 컬렉션 추가가 필요합니다':'사진 추가 실패: '+(e.code||e.message),6000); break; } }
+  if(n){ if(locked()) b.s7.editedAfterDone=nowLocal(); b.updatedAt=new Date().toISOString(); b.updatedBy=who(); await saveNow(); toast(`사진 ${n}장 추가됨`); }
+  busy(false); render(); }
+async function photoDel(id){ const b=cur; if(!b||!confirm('이 사진을 삭제할까요?')) return;
+  try{ if(fb){ const fsM=await import(FB_URL+'firebase-firestore.js'); await fsM.deleteDoc(fb.doc(fb.db,COL.photos,id)); } }catch(e){ toast('삭제 실패: '+(e.code||e.message)); return; }
+  b.s7.photos=(b.s7.photos||[]).filter(p=>p.id!==id); delete photoCache[id]; if(locked()) b.s7.editedAfterDone=nowLocal(); await saveNow(); render(); }
+function photoView(id){ const d=photoCache[id]; if(!d) return;
+  openModal(`<img src="${d}" style="width:100%;max-height:75vh;object-fit:contain;border-radius:8px;background:#000"><div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn" onclick="app.closeModal()">닫기</button></div>`);
+  const mb=$('modalBox'); if(mb) mb.style.maxWidth='min(96vw,1100px)'; }
+async function delBatchPhotos(b){ const ps=(b.s7&&b.s7.photos)||[]; if(!fb||!ps.length) return;
+  try{ const bt=fb.writeBatch(fb.db); ps.forEach(p=>bt.delete(fb.doc(fb.db,COL.photos,p.id))); await bt.commit(); }catch(e){ console.warn('photo cleanup',e); } }
+
+/* ---- Step 8: 완료 ---- */
 function vDone(){ const b=cur, pd=PD(), w=weigh(), tot=matTotal();
-  const miss=STEPS.slice(0,7).map((s,i)=>{ const [a,t]=stepProg(i); return a<t?`${s} (${a}/${t})`:null; }).filter(Boolean);
+  const miss=STEPS.slice(0,8).map((s,i)=>{ const [a,t]=stepProg(i); return a<t?`${s} (${a}/${t})`:null; }).filter(Boolean);
   const warn=[]; if(!matPass()) warn.push(`Material 합계 ${fmt(tot)} kg — Fail (기준 ${fmt(state.cfg.passMin)}~${fmt(state.cfg.passMax)})`);
   if(w&&!w.pass) warn.push('Weighbridge Balance Fail'); if(w&&!w.safe) warn.push('계근 판정: 위험 투입 검토 필요');
   const ms=state.cfg.ms||{}; const spOk=!!(ms.clientId&&ms.shareUrl);
-  if(locked()) return `<div class="card"><h2>작성 완료 <span class="pill ok">완료</span></h2>
+  const [s7a,s7t]=stepProg(7); const s7note=(b.s7.editedAfterDone?`<div class="banner warn"><b>(7) Connector 확인이 완료 후 수정되었습니다</b> (${esc(dt(b.s7.editedAfterDone))}) — 아래에서 PDF를 다시 저장하세요</div>`:'')
+    +(s7a<s7t?`<div class="banner blue">(7) Connector 확인 ${s7a}/${s7t} — 출하 시 <a href="#" onclick="app.step(7);return false">(7) 단계</a>에서 입력하세요</div>`:'')
+    +(!(b.s7.photos||[]).length?'<div class="banner warn">⚠ Connector 확인 사진이 없습니다</div>':'');
+  if(locked()) return `<div class="card"><h2>작성 완료 <span class="pill ok">완료</span></h2>${s7note}
     <div class="kv"><b>Batch ID</b><span>${esc(b.mat.batchId)}</span><b>제품 ID (출하)</b><span>${esc(b.mat.prodId||'-')}</span><b>작성자</b><span>${esc(b.done.author&&b.done.author.n||'')} · ${esc(dt(b.done.at||''))}</span>
     <b>재고 등록</b><span>${b.done.invIsoId?`ISO 충전 (${fmt(tot)} kg · ISO ${esc(b.mat.isoTank)})`:'—'}</span>
     <b>ISO 탱크</b><span>${(()=>{ const i=state.isos.find(x=>x.id===b.done.invIsoId); return !i?'<span class="pill gray">—</span>':i.status==='대기'?'<span class="pill warn">대기</span> — 실제 출하 시 재고 현황 › ISO 탱크 › “출하 처리” (수불부 출고 등록)':`<span class="pill ok">${esc(i.status)}</span> ${esc(dstr(i.shipDate))}`; })()}</span>
@@ -480,6 +579,7 @@ function vDone(){ const b=cur, pd=PD(), w=weigh(), tot=matTotal();
       <b>Customer</b><span>${esc(b.mat.customer)}</span><b>투입량</b><span>${fmt(tot)} kg (${matRows().map(r=>`${esc(r.sourceLot)} ${r.cnt}`).join(', ')})</span></div>
     ${miss.length?`<div class="banner warn"><b>미입력 항목</b><br>${miss.map(esc).join('<br>')}</div>`:'<div class="banner ok">모든 체크 항목이 입력되었습니다</div>'}
     ${warn.length?`<div class="banner bad">${warn.map(esc).join('<br>')}</div>`:''}
+    ${!(b.s7.photos||[]).length?'<div class="banner warn">⚠ Connector 확인 사진이 없습니다 (선택 사항 — 출하 시 완료 후에도 추가 가능)</div>':''}
     <div class="chk-row"><div class="lb">작성자 서명</div><div></div>${sig('done.author','작성자 선택')}</div>
     <div class="banner blue" style="margin-top:12px">작성 완료를 누르면<br>① 재고 현황 시스템에 Lot별 "ISO 충전" 차감 + ISO 탱크(<b>대기</b>) 생성 (사용 등록했으면 그대로 유지)<br>② 출하·수불부 출고는 <b>실제 출하 시</b> 재고 현황 › ISO 탱크 › “출하 처리”에서 진행<br>③ PDF 생성 → ${spOk?'SharePoint Batch Sheet 폴더에 저장':'<b>SharePoint 미설정 — PDF 다운로드만 됩니다 (설정 탭)</b>'}<br>④ 배치는 읽기 전용으로 잠깁니다</div>
     <div class="row" style="margin-top:12px"><button class="btn" onclick="app.pdf('preview')">PDF 미리보기</button><button class="btn ok" onclick="app.complete()">작성 완료 → ISO 충전 등록 + PDF 저장</button>
@@ -487,8 +587,15 @@ function vDone(){ const b=cur, pd=PD(), w=weigh(), tot=matTotal();
 }
 
 /* ---------------- 설정 ---------------- */
-function vSettings(){ const c=state.cfg, ms=c.ms||{};
-  return `<div class="card"><h2>작업자 명단 <span class="help">서명·PPE 성명 선택 목록</span></h2>
+function vSettings(){ const c=state.cfg, ms=c.ms||{}; const cs=connList();
+  return `<div class="card"><h2>(7) ISO Tank Connector 규격 <span class="help">고객별 — 엑셀 ISO Tank Shipment Check Sheet 기준</span></h2>
+    <div style="overflow-x:auto"><table class="t"><thead><tr><th>고객</th><th>Liquid connector</th><th>Gas connector</th><th>Valve 손잡이 제거</th><th>노즐 위치</th><th></th></tr></thead><tbody>
+    ${cs.map((x,i)=>`<tr>${['cust','liquid','gas','handle','nozzle'].map(k=>`<td><input id="cs_${k}_${i}" value="${esc(x[k]||'')}" style="width:100%;min-width:${k==='handle'||k==='nozzle'?190:90}px"></td>`).join('')}<td><button class="btn sm danger" onclick="app.csDel(${i})">삭제</button></td></tr>`).join('')}
+    </tbody></table></div>
+    <div class="row" style="margin-top:10px"><div class="fld"><label>Target Pressure (bar, 이상이면 OK)</label><input type="number" step="0.1" id="cfgTgtBar" value="${esc(c.targetBar??5)}" style="width:140px"></div></div>
+    <div class="help" style="margin-top:6px">배치의 고객명이 HWQ·Qcells·한화면 Qcells, PVJC면 PVJC 규격이 자동 선택됩니다 ((7) 단계에서 변경 가능)</div>
+    <div class="row" style="margin-top:12px"><button class="btn" onclick="app.csAdd()">＋ 고객 추가</button><button class="btn pri" onclick="app.csSave()">저장</button></div></div>
+  <div class="card"><h2>작업자 명단 <span class="help">서명·PPE 성명 선택 목록</span></h2>
     <textarea id="cfgWorkers" style="width:100%;min-height:140px;border:1px solid var(--line);border-radius:10px;padding:10px" placeholder="한 줄에 한 명">${esc((c.workers||[]).join('\n'))}</textarea>
     <h3>고객사 목록</h3><textarea id="cfgCust" style="width:100%;min-height:70px;border:1px solid var(--line);border-radius:10px;padding:10px">${esc((c.customers||[]).join('\n'))}</textarea>
     <h3>판정 기준</h3><div class="grid">
@@ -517,21 +624,22 @@ function vSettings(){ const c=state.cfg, ms=c.ms||{};
 
 /* ---------------- 이벤트 (위임) ---------------- */
 document.addEventListener('click',e=>{
-  const t=e.target.closest('[data-tog],[data-set],[data-sig],[data-now]'); if(!t||!cur||locked()||t.disabled) return;
-  if(t.dataset.tog){ setP(cur,t.dataset.tog,!getP(cur,t.dataset.tog)); touch(); render(); }
-  else if(t.dataset.set){ const p=t.dataset.set, v=t.dataset.v; setP(cur,p,getP(cur,p)===v?'':v); touch(); render(); }
-  else if(t.dataset.now){ setP(cur,t.dataset.now,nowLocal()); touch(); render(); }
+  const t=e.target.closest('[data-tog],[data-set],[data-sig],[data-now]'); if(!t||!cur||t.disabled) return;
+  const tp=t.dataset.tog||t.dataset.set||t.dataset.sig||t.dataset.now; if(ro(tp)) return;
+  if(t.dataset.tog){ setP(cur,t.dataset.tog,!getP(cur,t.dataset.tog)); touch(tp); render(); }
+  else if(t.dataset.set){ const p=t.dataset.set, v=t.dataset.v; setP(cur,p,getP(cur,p)===v?'':v); touch(tp); render(); }
+  else if(t.dataset.now){ setP(cur,t.dataset.now,nowLocal()); touch(tp); render(); }
   else if(t.dataset.sig){ pickName(t.dataset.sig); }
 });
 document.addEventListener('change',e=>{
-  const t=e.target; if(!t.dataset||!t.dataset.k||!cur||locked()) return;
+  const t=e.target; if(!t.dataset||!t.dataset.k||!cur||ro(t.dataset.k)) return;
   const p=t.dataset.k; if(t.value==='__new'){ t.value=getP(cur,p)||''; newIsoModal(p); return; } setP(cur,p,t.value);
   if(/^mat\.lots\.\d+\.lotId$/.test(p)){ const i=+p.split('.')[2]; const l=state.lots.find(x=>x.id===t.value); const r=cur.mat.lots[i];
     r.sourceLot=l?l.sourceLot:''; r.snap=l?{sourceLot:l.sourceLot,unitKg:l.unitKg,product:l.product}:null;
     if(l&&!r.count){ const pd=PD(); const others=matRows().filter((x,j)=>x!==r).reduce((s,x)=>s+x.cnt,0); const u=pd.unit; r.count=String(Math.max(0,Math.min(pd.count-others,Math.floor(lotRem(l)/u)))); } }
   if(p==='mat.mfgDate'&&autoId(cur.mat.batchId)) cur.mat.batchId=nextBatchId(PK(),cur.mat.mfgDate);
   if(p==='mat.shipDate'&&autoId(cur.mat.prodId)) cur.mat.prodId=nextProdId(PK(),cur.mat.shipDate);
-  touch(); render();
+  touch(p); render();
 });
 function newIsoModal(path){
   openModal(`<h3>새 ISO Tank 추가</h3><div class="help">설정의 ISO Tank 목록에 추가되고 바로 선택됩니다</div>
@@ -679,7 +787,7 @@ async function complete(){
   if(!(b.done.author&&b.done.author.n)){ toast('작성자 서명을 선택하세요'); return; }
   const dup=state.batches.find(x=>x.id!==b.id&&x.status==='완료'&&x.mat&&x.mat.batchId===b.mat.batchId); if(dup){ toast('같은 Batch ID로 완료된 배치가 이미 있습니다'); return; }
   const rm=remMap(b.id); const over=matRows().filter(r=>{ const l=state.lots.find(x=>x.id===r.lotId); return l&&r.kg>lotRem(l,rm)+0.01; });
-  const miss=STEPS.slice(0,7).filter((s,i)=>{ const [a,t]=stepProg(i); return a<t; });
+  const miss=STEPS.slice(0,8).filter((s,i)=>{ if(i===7) return false; const [a,t]=stepProg(i); return a<t; });
   let msg=`${b.mat.batchId} 작성을 완료할까요?\n\n`+(isUsed()?`사용 등록된 ISO 탱크(${fmt(b.mat.used.kg)} kg)는 대기 상태로 유지됩니다.`:`재고 현황 시스템에 ${fmt(matTotal())} kg ISO 충전 + ISO 탱크(대기)가 등록됩니다.`)
     +`\n\n출하·수불부 출고는 실제 출하 시 재고 현황 › ISO 탱크 › “출하 처리”에서 하세요.`;
   if(miss.length) msg+=`\n\n⚠ 미입력 단계: ${miss.join(', ')}`; if(!matPass()) msg+=`\n⚠ Material 합계 Fail`; if(over.length) msg+=`\n⚠ 현재고 초과 Lot: ${over.map(r=>r.sourceLot).join(', ')}`;
@@ -810,9 +918,40 @@ function pdfPages(b){ ensure(b); const pd=PROD[b.mat.product]||PROD.HF, w=weigh(
   <table><tr><th>작성자</th><td>${esc(b.done.author&&b.done.author.n||'')}</td><th>작성 일시</th><td>${esc(dt(b.done.at||''))}</td></tr>
   <tr><th>재고 등록</th><td colspan="3">${b.done.invIsoId?`재고 현황 시스템 ISO 충전 등록 · ${fmt(tot)} kg · ISO ${esc(b.mat.isoTank)}`:'미등록'}</td></tr>
   <tr><th>기록 계정</th><td colspan="3">${esc(b.done.by||b.updatedBy||'')}</td></tr></table>`);
+  /* P6 (7) ISO Tank Connector 확인 */
+  const s7=b.s7, sp=s7Spec(b), pok=s7PressOK(b), YN=v=>v?`<span class="${v==='N'||v==='NG'?'fail':'pass'}">${esc(v)}</span>`:'';
+  const ps7=s7.photos||[];
+  pages.push(`${pdfHeader('ISO Tank Connector Check Sheet',b)}${pdfInfo(b)}
+  <h2>(7) ISO Tank Connector 확인 (출하 시)</h2>
+  <table><tr><th style="width:34%">항목</th><th style="width:40%">설정</th><th>결과</th></tr>
+  <tr><td>Shipment Date</td><td></td><td class="c">${esc(s7Ship(b))}</td></tr>
+  <tr><td>ISO Tank No.</td><td></td><td class="c">${esc(s7Iso(b))}</td></tr>
+  <tr><td>Customer</td><td class="c">${esc(s7Cust(b))}</td><td class="c">${esc(b.mat.customer||'')}</td></tr>
+  <tr><td>PO No.</td><td></td><td class="c">${esc(s7.poNo)}</td></tr>
+  <tr><td>Liquid connector Check</td><td class="c">${esc(sp?sp.liquid:'')}</td><td class="c">${P_V(s7.liquid)}</td></tr>
+  <tr><td>Gas connector Check</td><td class="c">${esc(sp?sp.gas:'')}</td><td class="c">${P_V(s7.gas)}</td></tr>
+  <tr><td>Target Pressure (bar)</td><td class="c">&gt; ${tgtBar()} Bar</td><td></td></tr>
+  <tr><td>Actual Pressure</td><td></td><td class="c">${esc(s7.actualP)}${s7.actualP!==''?' bar':''}</td></tr>
+  <tr><td>Pressure Check (OK/NG)</td><td class="c">${tgtBar()} bar 이상일 때 OK</td><td class="c">${pok==null?'':pok?'<span class="pass">OK</span>':'<span class="fail">NG</span>'}</td></tr>
+  <tr><td>Valve 손잡이 제거</td><td class="c">${esc(sp?sp.handle:'')}</td><td class="c">${P_V(s7.handle)}</td></tr>
+  <tr><td>볼트체결 확인</td><td class="c">Tightness &amp; visual (in ISO Tank)</td><td class="c">${P_V(s7.bolt)}</td></tr>
+  <tr><td>노즐 위치 확인</td><td class="c">${esc(sp?sp.nozzle:'')}</td><td class="c">${P_V(s7.nozzle)}</td></tr>
+  <tr><td>Operator Name</td><td></td><td>${P_SIG(s7.operator)}</td></tr>
+  <tr><td>Supervisor Name</td><td></td><td>${P_SIG(s7.supervisor)}</td></tr>
+  <tr><td>Approval Status (OK/NG)</td><td></td><td class="c">${YN(s7.approval)}</td></tr>
+  <tr><td>Remarks</td><td colspan="2">${esc(s7.remarks)}</td></tr>
+  <tr><td>Connector 확인 사진</td><td colspan="2">${ps7.length?`${ps7.length}장 (다음 페이지)`:'없음'}</td></tr></table>`);
+  /* P7+ 사진 (페이지당 6장) */
+  const fit=(w,h)=>{ const s=Math.min(330/(w||4),270/(h||3)); return [Math.round((w||4)*s),Math.round((h||3)*s)]; };
+  for(let i=0;i<ps7.length;i+=6){ const part=ps7.slice(i,i+6);
+    pages.push(`${pdfHeader('ISO Tank Connector Check Sheet',b)}${pdfInfo(b)}
+    <h2>Connector 확인 사진 (${i+1}–${i+part.length} / ${ps7.length})</h2>
+    <div class="phs">${part.map((p,j)=>{ const d=photoCache[p.id]; const [w,h]=fit(p.w,p.h);
+      return `<div class="phc">${d?`<img src="${d}" style="width:${w}px;height:${h}px">`:'(사진을 불러오지 못함)'}<div>${i+j+1} · ${esc(dt(p.at))} · ${esc(String(p.by||'').split('@')[0])}</div></div>`; }).join('')}</div>`); }
   return pages.map((h,i)=>`<div class="pg">${h}${pfoot(b,i+1,pages.length)}</div>`).join('');
 }
 async function buildPdf(b){
+  await loadPhotos(b);
   const area=$('printArea'); area.innerHTML=pdfPages(b);
   const { jsPDF }=window.jspdf; const doc=new jsPDF({unit:'mm',format:'a4',orientation:'portrait',compress:true});
   const pgs=[...area.querySelectorAll('.pg')];
@@ -839,7 +978,7 @@ async function makePdf(mode){
     if(mode==='download'){ busy(false); downloadBlob(blob,name); b.done.pdfName=name; await saveNow(); render(); return; }
     busy(true,'SharePoint에 업로드 중…');
     const item=await (useRelay()?relayUpload(blob,name):spUpload(blob,name));
-    b.done.pdfName=name; b.done.spUrl=item.webUrl||''; b.done.spAt=new Date().toISOString(); await saveNow();
+    b.done.pdfName=name; b.done.spUrl=item.webUrl||''; b.done.spAt=new Date().toISOString(); if(b.s7) b.s7.editedAfterDone=''; await saveNow();
     busy(false); toast('SharePoint Batch Sheet 폴더에 저장되었습니다',4000); render();
   }catch(e){ busy(false); console.error(e);
     if(mode==='sp'){ if(confirm('SharePoint 저장 실패: '+(e.message||e)+'\n\nPDF를 이 기기에 다운로드할까요? (나중에 완료 화면에서 다시 저장할 수 있습니다)')){ try{ downloadBlob(await buildPdf(b),name); }catch(_){} } }
@@ -905,7 +1044,7 @@ async function connectFirebase(){
 }
 function stopListeners(){ unsubs.forEach(u=>{try{u();}catch(e){}}); unsubs=[]; }
 function startListeners(fsM,db){
-  stopListeners(); fb={db,doc:fsM.doc,setDoc:fsM.setDoc,writeBatch:fsM.writeBatch};
+  stopListeners(); fb={db,doc:fsM.doc,setDoc:fsM.setDoc,getDoc:fsM.getDoc,writeBatch:fsM.writeBatch};
   const pend=new Set(['batches','products','lots','usage','isos']); setConn('wait','불러오는 중…');
   const done=k=>{ pend.delete(k); if(!pend.size&&!state.loaded){ state.loaded=true; setConn('ok',esc(who())); render(); } };
   const onErr=k=>err=>{ console.warn(k,err); if(err.code==='permission-denied'){ setConn('err','권한 없음'); $('loginGate').style.display='flex'; $('loginMsg').textContent=`이 계정(${who()})은 ${k==='batches'?'batch_sheets':'inv_*'} 접근 권한이 없습니다.\nFirestore 보안 규칙에 batch_sheets / batch_config 추가가 필요합니다.`; } else toast('Firestore 오류: '+err.code); };
@@ -931,10 +1070,10 @@ function loadDemo(){
 window.app={
   useStock, unuse,
   go(v){ if(cur) saveNow(); state.view=v; if(v!=='edit') cur=null; window.scrollTo(0,0); render(); },
-  step(i){ state.step=Math.max(0,Math.min(7,i)); window.scrollTo(0,0); render(); },
+  step(i){ state.step=Math.max(0,Math.min(8,i)); window.scrollTo(0,0); render(); },
   listF(f){ state.listF=f; render(); },
   newBatch(){ cur=newBatch(); cur.mat.batchId=nextBatchId(cur.mat.product,cur.mat.mfgDate); cur.mat.prodId=nextProdId(cur.mat.product,cur.mat.shipDate); cur.mat.lots=autoAlloc(cur.mat.product).rows; state.view='edit'; state.step=0; saveNow(); window.scrollTo(0,0); render(); },
-  open(id){ const b=state.batches.find(x=>x.id===id); if(!b) return; cur=ensure(JSON.parse(JSON.stringify(b))); state.view='edit'; state.step=cur.status==='완료'?7:0; window.scrollTo(0,0); render(); },
+  open(id){ const b=state.batches.find(x=>x.id===id); if(!b) return; cur=ensure(JSON.parse(JSON.stringify(b))); state.view='edit'; state.step=cur.status==='완료'?8:0; window.scrollTo(0,0); render(); },
   setProd(k){ if(matLocked()) return; const old=cur.mat.product; if(old===k) return;
     if(cur.mat.lots.some(r=>r.lotId)&&!confirm('품목을 바꾸면 선택한 Lot이 현재고 기준으로 다시 배정됩니다. 계속할까요?')) return;
     cur.mat.product=k; cur.mat.isoTank=defIso(k,1); cur.mat.isoTank2=''; cur.mat.lots=autoAlloc(k).rows; cur.s4.chk={}; cur.s5.ibcChk={};
@@ -946,7 +1085,8 @@ window.app={
   addLot(){ if(matLocked()) return; cur.mat.lots.push({lotId:'',count:'',unitKg:''}); touch(); render(); },
   delLot(i){ if(matLocked()) return; cur.mat.lots.splice(i,1); if(!cur.mat.lots.length) cur.mat.lots.push({lotId:'',count:'',unitKg:''}); cur.s4.chk={}; cur.s5.ibcChk={}; touch(); render(); },
   ppeAll(i){ const w=cur.ppe.workers[i]; const all=PPE_ITEMS.every(([k])=>w.items[k]); PPE_ITEMS.forEach(([k])=>w.items[k]=!all); touch(); render(); },
-  sigSet(path,name){ name=(name||'').trim(); setP(cur,path,name?{n:name,t:nowLocal()}:null); closeModal(); touch(); render(); },
+  sigSet(path,name){ if(ro(path)) return; name=(name||'').trim(); setP(cur,path,name?{n:name,t:nowLocal()}:null); closeModal(); touch(path); render(); },
+  photoPick, photoDel, photoView,
   closeModal, complete, reopen,
   pdf(m){ makePdf(m); },
   async delBatch(id){ id=id||(cur&&cur.id); const b=(cur&&cur.id===id)?cur:state.batches.find(x=>x.id===id); if(!b) return;
@@ -956,10 +1096,16 @@ window.app={
     if(!confirm(`${b.mat&&b.mat.batchId||'이 배치'} (작성중)를 삭제할까요?\n입력한 내용은 복구할 수 없습니다.`+(ux.ops.length?`\n\n사용 등록된 재고 ${fmt(ux.u.kg)} kg이 재고 현황 시스템으로 복원됩니다.`:''))) return;
     clearTimeout(saveT);
     if(ux.ops.length){ try{ await writeOps(ux.ops); await logInv(unuseHist(b,ux.u,ux.ids.length,'배치 삭제')); }catch(e){ toast('재고 복원 실패: '+(e.code||e.message),5000); return; } }
+    await delBatchPhotos(b);
     try{ if(fb){ const fsM=await import(FB_URL+'firebase-firestore.js'); await fsM.deleteDoc(fb.doc(fb.db,COL.batch,id)); } state.batches=state.batches.filter(x=>x.id!==id); }catch(e){ toast('삭제 실패: '+(e.code||e.message)); return; }
     if(cur&&cur.id===id){ cur=null; state.view='list'; } toast('삭제되었습니다'); render(); },
   isoQuickAdd(path){ const no=($('niNo').value||'').trim(); if(!no){ toast('ISO Tank #를 입력하세요'); return; }
     const l=state.cfg.isoTanks=state.cfg.isoTanks||[]; if(!l.some(t=>t.no===no)) l.push({no,prod:$('niProd').value}); saveCfg(); setP(cur,path,no); closeModal(); touch(); render(); },
+  csCollect(){ const n=connList().length; state.cfg.connSpec=[...Array(n)].map((_,i)=>{ const o={}; ['cust','liquid','gas','handle','nozzle'].forEach(k=>{ const el=$(`cs_${k}_${i}`); o[k]=el?el.value.trim():((connList()[i]||{})[k]||''); }); return o; });
+    const tb=$('cfgTgtBar'); if(tb) state.cfg.targetBar=+tb.value||5; },
+  csAdd(){ app.csCollect(); state.cfg.connSpec.push({cust:'',liquid:'',gas:'',handle:'',nozzle:''}); render(); },
+  csDel(i){ app.csCollect(); state.cfg.connSpec.splice(i,1); if(!state.cfg.connSpec.length) state.cfg.connSpec=JSON.parse(JSON.stringify(DEF_CFG.connSpec)); render(); },
+  async csSave(){ app.csCollect(); state.cfg.connSpec=state.cfg.connSpec.filter(x=>x.cust); await saveCfg(); render(); },
   isoAdd(){ app.isoCollect(); state.cfg.isoTanks.push({no:'',prod:''}); render(); },
   isoDel(i){ app.isoCollect(); state.cfg.isoTanks.splice(i,1); render(); },
   isoCollect(){ state.cfg.isoTanks=(state.cfg.isoTanks||[]).map((t,i)=>({no:($('iso_no_'+i)?$('iso_no_'+i).value:t.no).trim(),prod:$('iso_pr_'+i)?$('iso_pr_'+i).value:t.prod})); },
