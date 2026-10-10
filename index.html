@@ -89,6 +89,10 @@ table.t td.num,table.t th.num{text-align:right;font-variant-numeric:tabular-nums
 
 /* ---------- PDF 출력용 (화면 밖) ---------- */
 #printArea{position:fixed;left:-10000px;top:0}
+.chk-row .spec{font-size:16px;font-weight:600;color:var(--tx);margin-top:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.sz{display:inline-block;color:#fff;font-weight:800;font-size:20px;line-height:1.2;padding:3px 12px;border-radius:8px}
+.cnote{background:var(--warnbg);color:#7c2d12;border:2px solid #f5b971;border-radius:10px;padding:8px 14px;font-size:17px;font-weight:700;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.cnote .sz{font-size:18px;padding:2px 10px}
 .ph-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:10px}
 .ph{position:relative;aspect-ratio:4/3;border-radius:10px;overflow:hidden;background:#eef1f5;border:1px solid var(--line);cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--mut);font-size:13px}
 .ph img{width:100%;height:100%;object-fit:cover;display:block}
@@ -172,8 +176,8 @@ const AF_OPEN=['00','20','10','14'], AF_CLOSE=['08','11','13'];
 const STEPS=['Material','(1) PPE','(2) RM & ISO','(3) 설비 점검','(4) 투입 전 확인','(5) Valve · 투입','(6) Air Flushing','(7) Connector 확인','완료'];
 const DEF_CFG={workers:[],customers:['HWQ CTSV'],isoTanks:[{no:'240003 (7)',prod:'HF'},{no:'240002(1)',prod:'HF'},{no:'240004 (2)',prod:'HNO3'},{no:'240001 (6)',prod:'HCl'}],passMin:18200,passMax:19000,maxKg:19000,weighDangerLb:40000,weighPassLb:500,
   /* (7) ISO Tank Connector 확인 — 엑셀 ISO_Tank_Shipment_Check_Sheet 기준 고객별 규격 */
-  connSpec:[{cust:'Qcells',liquid:'50A',gas:'20A',handle:'40A 밸브 손잡이 제거',nozzle:'50A 노즐 Rear 장착 확인'},
-            {cust:'PVJC',liquid:'40A',gas:'25A',handle:'50A 밸브 손잡이 제거',nozzle:'40A 노즐 Rear 장착 확인'}],targetBar:5,
+  connSpec:[{cust:'Qcells',liquid:'50A',gas:'20A',gasNote:'25A 연결 해제 후 20A 확인',handle:'40A 밸브 손잡이 제거',nozzle:'50A 노즐 Rear 장착 확인'},
+            {cust:'PVJC',liquid:'40A',gas:'25A',gasNote:'25A connector 연결',handle:'50A 밸브 손잡이 제거',nozzle:'40A 노즐 Rear 장착 확인'}],targetBar:5,
   ms:{clientId:'4483db59-77c7-4277-a795-540aaf732c5b',tenantId:'9e2f9e87-0f8e-4b71-87d4-c0b36430e0a6',shareUrl:DEFAULT_SHARE,driveId:'',itemId:'',folderName:'',relayUrl:''}};
 
 const state={batches:[],products:[],lots:[],usage:[],isos:[],outbound:[],outErr:null,ledgerMaster:null,cfg:JSON.parse(JSON.stringify(DEF_CFG)),loaded:false,view:'list',step:0,listF:'active'};
@@ -265,7 +269,11 @@ const ro=p=>locked()&&!String(p||'').startsWith('s7.');
 /* (7) Connector 확인은 HF만 해당 (HCl·HNO3는 단계 없음) */
 const hasS7=b=>{ b=b||cur; return !!b&&(PROD[b.mat.product]||PROD.HF).name==='HF'; };
 /* (7) 고객별 규격 */
-const connList=()=>(state.cfg.connSpec&&state.cfg.connSpec.length?state.cfg.connSpec:DEF_CFG.connSpec);
+const connList=()=>(state.cfg.connSpec&&state.cfg.connSpec.length?state.cfg.connSpec:DEF_CFG.connSpec).map(x=>x.gasNote!=null?x:{...x,gasNote:((DEF_CFG.connSpec.find(d=>d.cust===x.cust)||{}).gasNote||'')});
+/* 규격(50A·40A·25A·20A) 색 강조 */
+const SZ_COL={'50A':'#1d4ed8','40A':'#7c3aed','25A':'#c2410c','20A':'#15803d'};
+const hiA=t=>esc(t).replace(/(\d+\s?A)\b/g,m=>`<span class="sz" style="background:${SZ_COL[m.replace(/\s/g,'')]||'#0f766e'}">${m}</span>`);
+const hiAp=t=>esc(t).replace(/(\d+\s?A)\b/g,m=>`<b style="color:${SZ_COL[m.replace(/\s/g,'')]||'#0f766e'}">${m}</b>`);
 function guessConn(c){ const l=connList(); c=String(c||''); if(!c) return '';
   const ex=l.find(x=>x.cust.toLowerCase()===c.toLowerCase()); if(ex) return ex.cust;
   if(/hwq|q\s*cells|한화/i.test(c)&&l.some(x=>x.cust==='Qcells')) return 'Qcells';
@@ -499,7 +507,8 @@ function vS6(){ const pd=PD(); const a=num(cur.s6.airP);
 
 /* ---- Step 7: ISO Tank Connector 확인 (출하 시) ---- */
 function vS7(){ const s=cur.s7, sp=s7Spec(), ok=s7PressOK(), ps=s.photos||[], cust=s7Cust();
-  const row=(lb,set,ctl)=>`<div class="chk-row"><div class="lb">${lb}<small>${set}</small></div><div></div><div>${ctl}</div></div>`;
+  const row=(lb,set,ctl,note)=>`<div class="chk-row"><div class="lb">${lb}<small>${set}</small></div><div>${note?`<div class="cnote">⚠ ${note}</div>`:''}</div><div>${ctl}</div></div>`;
+  const srow=(lb,v,ctl,note)=>`<div class="chk-row"><div class="lb">${lb}<div class="spec">${sp?hiA(v):nosp}</div></div><div>${note?`<div class="cnote">⚠ ${hiA(note)}</div>`:''}</div><div>${ctl}</div></div>`;
   const nosp='<span class="pill warn">고객 선택 필요</span>';
   return `${locked()?`<div class="banner blue">배치는 완료(잠금) 상태이지만 <b>(7) Connector 확인은 출하 때 입력</b>할 수 있습니다. 입력 후 <b>완료</b> 탭에서 PDF를 다시 저장하세요.</div>`:''}
   <div class="card"><h2>(7) ISO Tank Connector 확인 <span class="help">출하 시</span></h2>
@@ -510,12 +519,12 @@ function vS7(){ const s=cur.s7, sp=s7Spec(), ok=s7PressOK(), ps=s.photos||[], cu
     <div class="fld"><label>PO No.</label>${inp('s7.poNo')}</div>
   </div>
   <h3>Connector · Valve</h3>
-  ${row('Liquid connector Check',sp?esc(sp.liquid):nosp,tog('s7.liquid','Check'))}
-  ${row('Gas connector Check',sp?esc(sp.gas):nosp,tog('s7.gas','Check'))}
+  ${srow('Liquid connector Check',sp&&sp.liquid,tog('s7.liquid','Check'))}
+  ${srow('Gas connector Check',sp&&sp.gas,tog('s7.gas','Check'),sp&&sp.gasNote)}
   <div class="chk-row"><div class="lb">Actual Pressure (bar)<small>Target &gt; ${tgtBar()} Bar · ${tgtBar()} bar 이상일 때 OK ${ok==null?'':ok?'<span class="pill ok">OK</span>':'<span class="pill bad">NG</span>'}</small></div><div class="fld" style="width:160px">${inp('s7.actualP','number','inputmode="decimal" step="0.01" placeholder="bar"')}</div><div></div></div>
-  ${row('Valve 손잡이 제거',sp?esc(sp.handle):nosp,tog('s7.handle','Check'))}
+  ${srow('Valve 손잡이 제거',sp&&sp.handle,tog('s7.handle','Check'))}
   ${row('볼트체결 확인','Tightness &amp; visual (in ISO Tank)',tog('s7.bolt','Check'))}
-  ${row('노즐 위치 확인',sp?esc(sp.nozzle):nosp,tog('s7.nozzle','Check'))}
+  ${srow('노즐 위치 확인',sp&&sp.nozzle,tog('s7.nozzle','Check'))}
   <h3>Connector 확인 사진 <span class="help">(${ps.length}장) 태블릿에서 바로 촬영하거나 갤러리에서 선택</span></h3>
   <div class="ph-btns"><button class="btn pri" onclick="app.photoPick(true)">📷 촬영</button><button class="btn" onclick="app.photoPick(false)">🖼 갤러리 / 파일</button></div>
   <div class="ph-grid">${ps.map((p,i)=>{ const d=photoCache[p.id]; if(!d) loadPhoto(p.id);
@@ -591,8 +600,8 @@ function vDone(){ const b=cur, pd=PD(), w=weigh(), tot=matTotal();
 /* ---------------- 설정 ---------------- */
 function vSettings(){ const c=state.cfg, ms=c.ms||{}; const cs=connList();
   return `<div class="card"><h2>(7) ISO Tank Connector 규격 <span class="help">고객별 — 엑셀 ISO Tank Shipment Check Sheet 기준</span></h2>
-    <div style="overflow-x:auto"><table class="t"><thead><tr><th>고객</th><th>Liquid connector</th><th>Gas connector</th><th>Valve 손잡이 제거</th><th>노즐 위치</th><th></th></tr></thead><tbody>
-    ${cs.map((x,i)=>`<tr>${['cust','liquid','gas','handle','nozzle'].map(k=>`<td><input id="cs_${k}_${i}" value="${esc(x[k]||'')}" style="width:100%;min-width:${k==='handle'||k==='nozzle'?190:90}px"></td>`).join('')}<td><button class="btn sm danger" onclick="app.csDel(${i})">삭제</button></td></tr>`).join('')}
+    <div style="overflow-x:auto"><table class="t"><thead><tr><th>고객</th><th>Liquid connector</th><th>Gas connector</th><th>Gas 연결 안내 (작업자 표시)</th><th>Valve 손잡이 제거</th><th>노즐 위치</th><th></th></tr></thead><tbody>
+    ${cs.map((x,i)=>`<tr>${['cust','liquid','gas','gasNote','handle','nozzle'].map(k=>`<td><input id="cs_${k}_${i}" value="${esc(x[k]||'')}" style="width:100%;min-width:${k==='handle'||k==='nozzle'||k==='gasNote'?190:90}px"></td>`).join('')}<td><button class="btn sm danger" onclick="app.csDel(${i})">삭제</button></td></tr>`).join('')}
     </tbody></table></div>
     <div class="row" style="margin-top:10px"><div class="fld"><label>Target Pressure (bar, 이상이면 OK)</label><input type="number" step="0.1" id="cfgTgtBar" value="${esc(c.targetBar??5)}" style="width:140px"></div></div>
     <div class="help" style="margin-top:6px">배치의 고객명이 HWQ·Qcells·한화면 Qcells, PVJC면 PVJC 규격이 자동 선택됩니다 ((7) 단계에서 변경 가능)</div>
@@ -930,14 +939,14 @@ function pdfPages(b){ ensure(b); const pd=PROD[b.mat.product]||PROD.HF, w=weigh(
   <tr><td>ISO Tank No.</td><td></td><td class="c">${esc(s7Iso(b))}</td></tr>
   <tr><td>Customer</td><td class="c">${esc(s7Cust(b))}</td><td class="c">${esc(b.mat.customer||'')}</td></tr>
   <tr><td>PO No.</td><td></td><td class="c">${esc(s7.poNo)}</td></tr>
-  <tr><td>Liquid connector Check</td><td class="c">${esc(sp?sp.liquid:'')}</td><td class="c">${P_V(s7.liquid)}</td></tr>
-  <tr><td>Gas connector Check</td><td class="c">${esc(sp?sp.gas:'')}</td><td class="c">${P_V(s7.gas)}</td></tr>
+  <tr><td>Liquid connector Check</td><td class="c">${hiAp(sp?sp.liquid:'')}</td><td class="c">${P_V(s7.liquid)}</td></tr>
+  <tr><td>Gas connector Check</td><td class="c">${hiAp(sp?sp.gas:'')}${sp&&sp.gasNote?`<br><span style="font-size:9.5px">${hiAp(sp.gasNote)}</span>`:''}</td><td class="c">${P_V(s7.gas)}</td></tr>
   <tr><td>Target Pressure (bar)</td><td class="c">&gt; ${tgtBar()} Bar</td><td></td></tr>
   <tr><td>Actual Pressure</td><td></td><td class="c">${esc(s7.actualP)}${s7.actualP!==''?' bar':''}</td></tr>
   <tr><td>Pressure Check (OK/NG)</td><td class="c">${tgtBar()} bar 이상일 때 OK</td><td class="c">${pok==null?'':pok?'<span class="pass">OK</span>':'<span class="fail">NG</span>'}</td></tr>
-  <tr><td>Valve 손잡이 제거</td><td class="c">${esc(sp?sp.handle:'')}</td><td class="c">${P_V(s7.handle)}</td></tr>
+  <tr><td>Valve 손잡이 제거</td><td class="c">${hiAp(sp?sp.handle:'')}</td><td class="c">${P_V(s7.handle)}</td></tr>
   <tr><td>볼트체결 확인</td><td class="c">Tightness &amp; visual (in ISO Tank)</td><td class="c">${P_V(s7.bolt)}</td></tr>
-  <tr><td>노즐 위치 확인</td><td class="c">${esc(sp?sp.nozzle:'')}</td><td class="c">${P_V(s7.nozzle)}</td></tr>
+  <tr><td>노즐 위치 확인</td><td class="c">${hiAp(sp?sp.nozzle:'')}</td><td class="c">${P_V(s7.nozzle)}</td></tr>
   <tr><td>Operator Name</td><td></td><td>${P_SIG(s7.operator)}</td></tr>
   <tr><td>Supervisor Name</td><td></td><td>${P_SIG(s7.supervisor)}</td></tr>
   <tr><td>Approval Status (OK/NG)</td><td></td><td class="c">${YN(s7.approval)}</td></tr>
@@ -1103,9 +1112,9 @@ window.app={
     if(cur&&cur.id===id){ cur=null; state.view='list'; } toast('삭제되었습니다'); render(); },
   isoQuickAdd(path){ const no=($('niNo').value||'').trim(); if(!no){ toast('ISO Tank #를 입력하세요'); return; }
     const l=state.cfg.isoTanks=state.cfg.isoTanks||[]; if(!l.some(t=>t.no===no)) l.push({no,prod:$('niProd').value}); saveCfg(); setP(cur,path,no); closeModal(); touch(); render(); },
-  csCollect(){ const n=connList().length; state.cfg.connSpec=[...Array(n)].map((_,i)=>{ const o={}; ['cust','liquid','gas','handle','nozzle'].forEach(k=>{ const el=$(`cs_${k}_${i}`); o[k]=el?el.value.trim():((connList()[i]||{})[k]||''); }); return o; });
+  csCollect(){ const n=connList().length; state.cfg.connSpec=[...Array(n)].map((_,i)=>{ const o={}; ['cust','liquid','gas','gasNote','handle','nozzle'].forEach(k=>{ const el=$(`cs_${k}_${i}`); o[k]=el?el.value.trim():((connList()[i]||{})[k]||''); }); return o; });
     const tb=$('cfgTgtBar'); if(tb) state.cfg.targetBar=+tb.value||5; },
-  csAdd(){ app.csCollect(); state.cfg.connSpec.push({cust:'',liquid:'',gas:'',handle:'',nozzle:''}); render(); },
+  csAdd(){ app.csCollect(); state.cfg.connSpec.push({cust:'',liquid:'',gas:'',gasNote:'',handle:'',nozzle:''}); render(); },
   csDel(i){ app.csCollect(); state.cfg.connSpec.splice(i,1); if(!state.cfg.connSpec.length) state.cfg.connSpec=JSON.parse(JSON.stringify(DEF_CFG.connSpec)); render(); },
   async csSave(){ app.csCollect(); state.cfg.connSpec=state.cfg.connSpec.filter(x=>x.cust); await saveCfg(); render(); },
   isoAdd(){ app.isoCollect(); state.cfg.isoTanks.push({no:'',prod:''}); render(); },
