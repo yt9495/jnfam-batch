@@ -319,8 +319,21 @@ function stepProg(i,b){ b=b||cur; const c=[];
 
 /* ---------------- 저장 ---------------- */
 function touch(p){ if(!cur||ro(p)) return; if(locked()) cur.s7.editedAfterDone=nowLocal(); cur.updatedAt=new Date().toISOString(); cur.updatedBy=who(); clearTimeout(saveT); saveT=setTimeout(saveNow,600); }
-async function saveNow(){ clearTimeout(saveT); if(!cur) return; const data=JSON.parse(JSON.stringify(cur));
-  if(fb){ try{ await fb.setDoc(fb.doc(fb.db,COL.batch,cur.id),data); }catch(e){ toast('저장 실패: '+(e.code||e.message)); } }
+/* 재고 연결값(사용 등록 ISO·충전 기록 ID) 보호 — 다른 기기에서 열어 둔 오래된 화면이 저장하면서
+   재등록된 ISO 연결을 예전 값으로 덮어쓰지 않도록, 화면을 연 뒤 이 기기에서 바꾸지 않은 연결값은 서버 값을 따른다 */
+const LINK_DONE=['invIsoId','invUsageIds','viaUse'];
+const linkOf=b=>JSON.stringify({u:(b&&b.mat&&b.mat.used)||null,d:LINK_DONE.map(k=>(b&&b.done&&b.done[k])??null)});
+let curBaseLink=null;
+function setLink(dst,src){ dst.mat.used=src.mat&&src.mat.used?JSON.parse(JSON.stringify(src.mat.used)):null;
+  LINK_DONE.forEach(k=>{ const v=src.done&&src.done[k]; if(v==null) delete dst.done[k]; else dst.done[k]=JSON.parse(JSON.stringify(v)); }); }
+/* 화면이 열려 있는 동안 다른 사람이 연결값을 바꾸면(재등록 등) 이 화면에도 반영 */
+function syncCurLink(remote){ if(!cur||!remote) return; const r=linkOf(remote), c=linkOf(cur);
+  if(r===c){ curBaseLink=r; return; }
+  if(curBaseLink!=null&&r!==curBaseLink&&c===curBaseLink){ setLink(cur,remote); curBaseLink=r; } }
+async function saveNow(){ clearTimeout(saveT); if(!cur) return;
+  if(fb){ try{ const rs=await fb.getDoc(fb.doc(fb.db,COL.batch,cur.id)); if(rs.exists()) syncCurLink({id:rs.id,...rs.data()}); }catch(e){ console.warn('link check',e); } }
+  const data=JSON.parse(JSON.stringify(cur));
+  if(fb){ try{ await fb.setDoc(fb.doc(fb.db,COL.batch,cur.id),data); curBaseLink=linkOf(data); }catch(e){ toast('저장 실패: '+(e.code||e.message)); } }
   else { const i=state.batches.findIndex(x=>x.id===cur.id); if(i>=0) state.batches[i]=data; else state.batches.unshift(data); } }
 async function saveCfg(){ const data=JSON.parse(JSON.stringify(state.cfg)); if(fb) await fb.setDoc(fb.doc(fb.db,COL.cfg,'main'),data); toast('설정 저장됨'); }
 
@@ -1058,15 +1071,35 @@ async function connectFirebase(){
   }catch(e){ setConn('err','Firebase 연결 실패'); toast('Firebase 연결 실패: '+e.message); }
 }
 function stopListeners(){ unsubs.forEach(u=>{try{u();}catch(e){}}); unsubs=[]; }
+/* 연결 자동 복구: 배치에 저장된 ISO가 재고 현황에 없고, 이 배치로 만든 ISO(batchSheetId)가 정확히 1개 있으면
+   그 ISO와 충전 기록 ID로 연결값만 갱신 (ISO가 삭제 후 재등록됐는데 배치 문서가 예전 ID로 남은 경우) */
+let healT=null, healing=false;
+function scheduleHeal(){ clearTimeout(healT); healT=setTimeout(healLinks,1500); }
+async function healLinks(){
+  if(!fb||!fb.updateDoc||!state.loaded||healing) return; healing=true;
+  try{ const has=id=>state.isos.some(i=>i.id===id);
+    for(const b of state.batches){
+      const alt=state.isos.filter(i=>i.batchSheetId===b.id); if(alt.length!==1) continue;
+      const iso=alt[0], uids=(iso.sourceUsageIds||[]).slice(), upd={};
+      const u=b.mat&&b.mat.used; if(u&&u.isoId&&!has(u.isoId)){ upd['mat.used.isoId']=iso.id; upd['mat.used.usageIds']=uids; }
+      if(b.done&&b.done.invIsoId&&!has(b.done.invIsoId)){ upd['done.invIsoId']=iso.id; upd['done.invUsageIds']=uids; }
+      if(!Object.keys(upd).length) continue;
+      await fb.updateDoc(fb.doc(fb.db,COL.batch,b.id),upd);
+      if(cur&&cur.id===b.id){ if(upd['mat.used.isoId']){ cur.mat.used.isoId=iso.id; cur.mat.used.usageIds=uids; } if(upd['done.invIsoId']){ cur.done.invIsoId=iso.id; cur.done.invUsageIds=uids; } curBaseLink=linkOf(cur); }
+      console.info('Batch↔ISO 연결 복구',(b.mat&&b.mat.batchId)||b.id,'→',iso.jnfamLot||iso.id);
+    }
+  }catch(e){ console.warn('연결 복구 실패',e); }
+  healing=false;
+}
 function startListeners(fsM,db){
-  stopListeners(); fb={db,doc:fsM.doc,setDoc:fsM.setDoc,getDoc:fsM.getDoc,writeBatch:fsM.writeBatch};
+  stopListeners(); fb={db,doc:fsM.doc,setDoc:fsM.setDoc,getDoc:fsM.getDoc,updateDoc:fsM.updateDoc,writeBatch:fsM.writeBatch};
   const pend=new Set(['batches','products','lots','usage','isos']); setConn('wait','불러오는 중…');
   const done=k=>{ pend.delete(k); if(!pend.size&&!state.loaded){ state.loaded=true; setConn('ok',esc(who())); render(); } };
   const onErr=k=>err=>{ console.warn(k,err); if(err.code==='permission-denied'){ setConn('err','권한 없음'); $('loginGate').style.display='flex'; $('loginMsg').textContent=`이 계정(${who()})은 ${k==='batches'?'batch_sheets':'inv_*'} 접근 권한이 없습니다.\nFirestore 보안 규칙에 batch_sheets / batch_config 추가가 필요합니다.`; } else toast('Firestore 오류: '+err.code); };
   [['products',COL.products],['lots',COL.lots],['usage',COL.usage],['isos',COL.isos],['batches',COL.batch]].forEach(([k,c])=>{
     unsubs.push(fsM.onSnapshot(fsM.collection(db,c),snap=>{ state[k]=snap.docs.map(d=>({id:d.id,...d.data()}));
-      if(k==='batches'&&cur){ const s=state[k].find(x=>x.id===cur.id); if(s&&s.status==='완료'&&cur.status!=='완료'){ cur=ensure(s); } }
-      done(k); if(state.loaded&&!(document.activeElement&&document.activeElement.dataset&&document.activeElement.dataset.k)) render(); },onErr(k)));
+      if(k==='batches'&&cur){ const s=state[k].find(x=>x.id===cur.id); if(s&&s.status==='완료'&&cur.status!=='완료'){ cur=ensure(JSON.parse(JSON.stringify(s))); curBaseLink=linkOf(cur); } else if(s) syncCurLink(s); }
+      done(k); if(k==='batches'||k==='isos') scheduleHeal(); if(state.loaded&&!(document.activeElement&&document.activeElement.dataset&&document.activeElement.dataset.k)) render(); },onErr(k)));
   });
   unsubs.push(fsM.onSnapshot(fsM.doc(db,COL.cfg,'main'),s=>{ if(s.exists()){ const d=s.data(); state.cfg={...JSON.parse(JSON.stringify(DEF_CFG)),...d,ms:{...DEF_CFG.ms,...(d.ms||{})}}; ['clientId','tenantId','shareUrl'].forEach(k=>{ if(!state.cfg.ms[k]) state.cfg.ms[k]=DEF_CFG.ms[k]; }); } if(state.cfg.ms.clientId) msalInit(); if(state.view==='settings'||state.loaded) render(); },err=>console.warn('cfg',err)));
 }
@@ -1087,8 +1120,8 @@ window.app={
   go(v){ if(cur) saveNow(); state.view=v; if(v!=='edit') cur=null; window.scrollTo(0,0); render(); },
   step(i){ if(i===7&&cur&&!hasS7()) i=state.step>7?6:8; state.step=Math.max(0,Math.min(8,i)); window.scrollTo(0,0); render(); },
   listF(f){ state.listF=f; render(); },
-  newBatch(){ cur=newBatch(); cur.mat.batchId=nextBatchId(cur.mat.product,cur.mat.mfgDate); cur.mat.prodId=nextProdId(cur.mat.product,cur.mat.shipDate); cur.mat.lots=autoAlloc(cur.mat.product).rows; state.view='edit'; state.step=0; saveNow(); window.scrollTo(0,0); render(); },
-  open(id){ const b=state.batches.find(x=>x.id===id); if(!b) return; cur=ensure(JSON.parse(JSON.stringify(b))); state.view='edit'; state.step=cur.status==='완료'?8:0; window.scrollTo(0,0); render(); },
+  newBatch(){ cur=newBatch(); curBaseLink=linkOf(cur); cur.mat.batchId=nextBatchId(cur.mat.product,cur.mat.mfgDate); cur.mat.prodId=nextProdId(cur.mat.product,cur.mat.shipDate); cur.mat.lots=autoAlloc(cur.mat.product).rows; state.view='edit'; state.step=0; saveNow(); window.scrollTo(0,0); render(); },
+  open(id){ const b=state.batches.find(x=>x.id===id); if(!b) return; cur=ensure(JSON.parse(JSON.stringify(b))); curBaseLink=linkOf(cur); state.view='edit'; state.step=cur.status==='완료'?8:0; window.scrollTo(0,0); render(); },
   setProd(k){ if(matLocked()) return; const old=cur.mat.product; if(old===k) return;
     if(cur.mat.lots.some(r=>r.lotId)&&!confirm('품목을 바꾸면 선택한 Lot이 현재고 기준으로 다시 배정됩니다. 계속할까요?')) return;
     cur.mat.product=k; cur.mat.isoTank=defIso(k,1); cur.mat.isoTank2=''; cur.mat.lots=autoAlloc(k).rows; cur.s4.chk={}; cur.s5.ibcChk={};
